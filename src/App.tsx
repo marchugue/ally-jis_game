@@ -42,7 +42,7 @@ export default function App() {
   return (
     <>
       <div
-        className={`grid min-h-[100dvh] grid-cols-[76px_minmax(0,1fr)_288px] max-[959px]:grid-cols-[minmax(0,1fr)] ${view === 'games'
+        className={`grid min-h-[100dvh] grid-cols-[84px_minmax(0,1fr)_288px] max-[959px]:grid-cols-[minmax(0,1fr)] ${view === 'games'
           ? 'max-[959px]:[&_.friends]:hidden'
           : 'max-[959px]:[&_.main-content]:hidden'
           }`}

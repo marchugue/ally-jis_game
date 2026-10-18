@@ -51,6 +51,9 @@ export default {
       animation: {
         pop: 'pop 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
         blink: 'blink 1.2s infinite both',
+      },
+      transitionTimingFunction: {
+        spring: 'cubic-bezier(0.34, 1.4, 0.64, 1)',
       }
     },
   },
