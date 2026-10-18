@@ -36,9 +36,13 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
 };
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({ name, className = 'w-[22px] h-[22px]' }: { name: IconName; className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={`fill-none stroke-current stroke-[1.7] [stroke-linecap:round] [stroke-linejoin:round] ${className}`}
+    >
       {PATHS[name]}
     </svg>
   );
