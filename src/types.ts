@@ -5,11 +5,20 @@ export type View = 'games' | 'friends';
 export interface Person {
   id: string;
   name: string;
-  color: string;
+  color?: string;
+  avatar_url?: string;
+  avatarKey?: string;
+  isAnonymous?: boolean;
 }
 
 export interface Friend extends Person {
   status: Presence;
+  isAnonymous?: boolean;
+  avatarKey?: string;
+  streak?: number;
+  matchPoints?: number;
+  matchId?: string;
+  conversationId?: string;
 }
 
 export interface Game {
