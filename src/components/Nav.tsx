@@ -1,3 +1,4 @@
+import allyjisIcon from '../assets/icon.png';
 import { ME } from '../data';
 import { Icon, type IconName } from '../icons';
 import type { View } from '../types';
@@ -112,14 +113,16 @@ export function Rail(props: Props) {
       {/* SECTION 1: Top Floating Logo / Icon Container */}
       <div className="flex-none pointer-events-auto">
         <div
-          className="w-[64px] h-[64px] rounded-full p-[10px] bg-[#1A1A1A]/90 backdrop-blur-md border border-[#262626] shadow-xl shadow-black/50 flex items-center justify-center transition-all duration-300 hover:border-[#38C185]/60 hover:shadow-[0_0_24px_rgba(56,193,133,0.25)] hover:scale-105 cursor-pointer group"
-          title="ALLY-JIS Game Portal"
+          className="w-[64px] h-[64px] rounded-full p-[10px] bg-[#1A1A1A]/90 backdrop-blur-md border border-[#262626] shadow-xl shadow-black/50 flex items-center justify-center transition-all duration-300 hover:border-[#38C185]/60 hover:shadow-[0_0_24px_rgba(56,193,133,0.3)] hover:scale-105 cursor-pointer group"
+          title="ALLY-JIS"
         >
-          <div className="w-11 h-11 rounded-full bg-[#121212] border border-[#262626]/80 flex items-center justify-center transition-transform duration-300 group-hover:scale-110">
-            <svg width="22" height="22" viewBox="0 0 22 22">
-              <circle cx="8" cy="11" r="5" fill="#38C185" />
-              <circle cx="14" cy="11" r="5" fill="#F0B247" fillOpacity="0.85" />
-            </svg>
+          <div className="w-11 h-11 rounded-full bg-[#1A6B3C] border border-[#38C185]/40 flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-110 shadow-md shadow-[#38C185]/20">
+            <img
+              src={allyjisIcon}
+              alt="ALLY-JIS"
+              className="w-full h-full object-cover select-none"
+              draggable={false}
+            />
           </div>
         </div>
       </div>
