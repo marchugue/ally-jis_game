@@ -4,17 +4,17 @@
 
 @layer base {
   :root {
-    --bg: #16171a;
-    --s1: #1d1f23;
-    --s2: #25282d;
-    --s3: #2e3137;
-    --line: #30343a;
-    --tx: #ece8e1;
-    --mu: #8e929b;
-    --lav: #a99bc4;
-    --amb: #d6a25c;
-    --blu: #7b97b8;
-    --sage: #8fae9d;
+    --bg: #121212;
+    --s1: #1A1A1A;
+    --s2: #202024;
+    --s3: #26262A;
+    --line: #262626;
+    --tx: #EDEDED;
+    --mu: #94A3B8;
+    --lav: #38C185;
+    --amb: #F0B247;
+    --blu: #60A5FA;
+    --sage: #38C185;
     color-scheme: dark;
     box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
@@ -26,8 +26,8 @@
 
   html, body {
     margin: 0;
-    background-color: #16171a;
-    color: #ece8e1;
+    background-color: #121212;
+    color: #EDEDED;
   }
 
   body {
@@ -55,7 +55,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid #a99bc4;
+    outline: 2px solid #38C185;
     outline-offset: 2px;
   }
 }

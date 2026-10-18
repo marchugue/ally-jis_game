@@ -11,7 +11,7 @@ export function GameCard({ game, onPlay }: Props) {
   const Art = GAME_ART[game.id];
   return (
     <article
-      className={`group flex flex-col bg-game-s1 border border-game-line rounded-[26px] overflow-hidden transition-colors duration-200 hover:border-[#454a52] [--ring:theme(colors.game.s1)] ${
+      className={`group flex flex-col bg-[#1A1A1A] border border-[#262626] rounded-[26px] overflow-hidden transition-all duration-200 hover:border-[#38C185]/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.5)] [--ring:theme(colors.game.s1)] ${
         game.featured
           ? 'row-span-2 max-[1180px]:col-span-full max-[1180px]:row-auto'
           : ''
@@ -32,7 +32,7 @@ export function GameCard({ game, onPlay }: Props) {
       <div className="p-[20px_22px_22px] flex flex-col gap-[18px]">
         <div>
           <h2
-            className={`font-display font-semibold leading-[1.2] -tracking-[0.01em] ${
+            className={`font-display font-semibold leading-[1.2] -tracking-[0.01em] text-[#EDEDED] ${
               game.featured
                 ? 'text-[28px] max-[620px]:text-[24px]'
                 : 'text-xl'
@@ -41,7 +41,7 @@ export function GameCard({ game, onPlay }: Props) {
             {game.name}
           </h2>
           <p
-            className={`text-game-mu mt-1 ${
+            className={`text-[#94A3B8] mt-1 ${
               game.featured ? 'text-[15px]' : 'text-sm'
             }`}
           >
@@ -53,8 +53,8 @@ export function GameCard({ game, onPlay }: Props) {
           <button
             className={`h-[42px] px-[22px] rounded-full font-semibold text-sm transition-all duration-150 active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed ${
               game.featured
-                ? 'bg-game-amb border border-game-amb text-[#1c1710] hover:bg-[#e0ad69]'
-                : 'bg-game-s3 border border-[#3a3e45] text-game-tx hover:bg-[#383c43]'
+                ? 'bg-[#38C185] border border-[#38C185] text-[#081B12] hover:bg-[#42d494] shadow-[0_0_20px_rgba(56,193,133,0.3)]'
+                : 'bg-[#252528] border border-[#333338] text-[#EDEDED] hover:bg-[#2D2D32] hover:border-[#38C185]/50'
             }`}
             aria-label={`Play ${game.name}`}
             onClick={() => onPlay(game.id)}

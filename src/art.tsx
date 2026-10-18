@@ -15,7 +15,7 @@ function TicTacToeArt() {
         <path d="M89 89l22 22M111 89L89 111" />
         <path d="M141 141l22 22M163 141l-22 22" />
       </g>
-      <g fill="none" stroke="#a99bc4" strokeWidth="7">
+      <g fill="none" stroke="#38C185" strokeWidth="7">
         <circle cx="152" cy="48" r="13" />
         <circle cx="48" cy="152" r="13" />
         <circle cx="100" cy="152" r="13" />
@@ -28,12 +28,12 @@ function SecretClueArt() {
   return (
     <svg viewBox="0 0 240 190" role="img" aria-label="Hidden clue cards">
       <g transform="rotate(-9 104 84)">
-        <rect x="56" y="22" width="96" height="124" rx="14" fill="#2d2a35" stroke="#47425a" strokeWidth="2" />
+        <rect x="56" y="22" width="96" height="124" rx="14" fill="#1C2720" stroke="#263E32" strokeWidth="2" />
       </g>
       <g transform="rotate(7 138 84)">
-        <rect x="90" y="22" width="96" height="124" rx="14" fill="#383349" stroke="#6a5f88" strokeWidth="2" />
-        <circle cx="138" cy="72" r="9" fill="#a99bc4" />
-        <path d="M133 79h10l2 29h-14z" fill="#a99bc4" />
+        <rect x="90" y="22" width="96" height="124" rx="14" fill="#20362B" stroke="#38C185" strokeWidth="2" />
+        <circle cx="138" cy="72" r="9" fill="#38C185" />
+        <path d="M133 79h10l2 29h-14z" fill="#38C185" />
       </g>
       <g stroke="#464b54" strokeWidth="4" strokeLinecap="round">
         <path d="M40 174h24M74 174h24M108 174h24M176 174h24" />
@@ -49,7 +49,7 @@ function SecretClueArt() {
 const TILE: Record<number, [bg: string, fg: string]> = {
   2: ['#363a42', '#b5bac3'],
   4: ['#415068', '#dbe3ee'],
-  8: ['#5a5075', '#e8e2f3'],
+  8: ['#1E4D38', '#A7F3D0'],
   16: ['#b08449', '#1c1710'],
 };
 const ROWS = [

@@ -17,11 +17,11 @@ export function FriendRow({ friend, mode, selected, invited, onSelect }: Props) 
       className={`w-full flex items-center gap-3 p-[9px_10px] rounded-2xl border text-left transition-all duration-150 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${
         selected
           ? mode === 'pick'
-            ? 'bg-game-s2 border-game-lav'
-            : 'bg-game-s1 border-[#4a4560]'
+            ? 'bg-[#202024] border-[#38C185]'
+            : 'bg-[#1A1A1A] border-[#38C185]/60 shadow-[0_0_12px_rgba(56,193,133,0.15)]'
           : mode === 'pick'
-          ? 'border-transparent hover:not(:disabled):bg-game-s2'
-          : 'border-transparent hover:not(:disabled):bg-game-s1'
+          ? 'border-transparent hover:not(:disabled):bg-[#202024]'
+          : 'border-transparent hover:not(:disabled):bg-[#1A1A1A]'
       }`}
       disabled={friend.status === 'offline'}
       onClick={() => onSelect(friend.id)}
@@ -30,20 +30,20 @@ export function FriendRow({ friend, mode, selected, invited, onSelect }: Props) 
       <span className="relative inline-flex">
         <Avatar person={friend} size="lg" />
         <i
-          className={`absolute -right-[1px] -bottom-[1px] w-[11px] h-[11px] rounded-full border-[2.5px] border-[var(--ring,theme(colors.game.bg))] ${
+          className={`absolute -right-[1px] -bottom-[1px] w-[11px] h-[11px] rounded-full border-[2.5px] border-[#121212] ${
             friend.status === 'online'
-              ? 'bg-game-sage'
+              ? 'bg-[#38C185]'
               : friend.status === 'away'
-              ? 'bg-game-amb'
+              ? 'bg-[#F0B247]'
               : 'bg-[#5b5f67]'
           }`}
         />
       </span>
-      <span className="font-medium flex-1 text-game-tx">
+      <span className="font-medium flex-1 text-[#EDEDED]">
         {friend.name}
         <span className="sr-only">, {friend.status}</span>
       </span>
-      {invited && <span className="text-[12.5px] text-game-amb font-medium">Invited</span>}
+      {invited && <span className="text-[12.5px] text-[#F0B247] font-semibold">Invited</span>}
     </button>
   );
 }
