@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useGameAuth } from './context/AuthContext';
+import { getWebPortalUrl } from './lib/auth';
 import { PresenceProvider } from './context/PresenceContext';
 import { GameSocketProvider, useGameSocket } from './context/GameSocketContext';
 import { AuthGuard } from './components/AuthGuard';
@@ -380,6 +381,18 @@ function GamePortal() {
 }
 
 export default function App() {
+  // If user navigated directly to /login on the game domain, redirect them to the real web login page
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/login')) {
+      const webUrl = getWebPortalUrl();
+      const redirectParam = new URLSearchParams(window.location.search).get('redirect');
+      const target = redirectParam
+        ? `${webUrl}/login?redirect=${encodeURIComponent(redirectParam)}`
+        : `${webUrl}/login`;
+      window.location.replace(target);
+    }
+  }, []);
+
   return (
     <AuthProvider>
       <AuthGuard>

@@ -26,9 +26,13 @@ export interface AuthSession {
   expiresAt?: number;
 }
 
+export const DEFAULT_PRODUCTION_API_URL = 'https://ally-jisbackend-production.up.railway.app/api';
+export const DEFAULT_PRODUCTION_WEB_URL = 'https://ally-jis.com';
+export const DEFAULT_PRODUCTION_SOCKET_URL = 'https://ally-jisbackend-production.up.railway.app';
+
 /**
  * Resolves the Backend API base URL from .env (VITE_API_BASE_URL).
- * Falls back to relative /api on the current origin if not provided.
+ * Falls back to Railway production API when running on production domains.
  */
 export function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
@@ -36,9 +40,18 @@ export function getApiBaseUrl(): string {
     return envUrl.replace(/\/+$/, '');
   }
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/api`;
+    const host = window.location.hostname;
+    if (
+      host === 'game.ally-jis.com' ||
+      host.endsWith('ally-jis.com') ||
+      host.endsWith('ally-jis.xyz') ||
+      host.includes('vercel.app')
+    ) {
+      return DEFAULT_PRODUCTION_API_URL;
+    }
+    return 'http://localhost:3001/api';
   }
-  return '';
+  return DEFAULT_PRODUCTION_API_URL;
 }
 
 /**
@@ -49,11 +62,13 @@ export function getSocketBaseUrl(): string {
   if (envSocketUrl) {
     return envSocketUrl.replace(/\/+$/, '');
   }
-  return getApiBaseUrl().replace(/\/api\/?$/, '');
+  const apiBase = getApiBaseUrl();
+  return apiBase.replace(/\/api\/?$/, '');
 }
 
 /**
  * Resolves the Web Portal URL from .env (VITE_WEB_URL).
+ * Points to https://ally-jis.com on production domains.
  */
 export function getWebPortalUrl(): string {
   const envWebUrl = import.meta.env.VITE_WEB_URL as string | undefined;
@@ -61,9 +76,20 @@ export function getWebPortalUrl(): string {
     return envWebUrl.replace(/\/+$/, '');
   }
   if (typeof window !== 'undefined') {
-    return window.location.origin;
+    const host = window.location.hostname;
+    if (
+      host === 'game.ally-jis.com' ||
+      host.endsWith('ally-jis.com') ||
+      host.includes('vercel.app')
+    ) {
+      return DEFAULT_PRODUCTION_WEB_URL;
+    }
+    if (host.endsWith('ally-jis.xyz')) {
+      return 'https://ally-jis.xyz';
+    }
+    return 'http://localhost:5173';
   }
-  return '';
+  return DEFAULT_PRODUCTION_WEB_URL;
 }
 
 /**
@@ -135,6 +161,53 @@ export function extractTokenFromUrl(): string | null {
 }
 
 /**
+ * Decodes the payload portion of a JWT token safely in the browser.
+ */
+export function parseJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (err) {
+    console.warn('[GameAuth] Failed to parse JWT payload:', err);
+    return null;
+  }
+}
+
+/**
+ * Creates an immediate authenticated AuthSession from a valid JWT token.
+ * Validates expiration (exp claim) if present.
+ */
+export function createSessionFromToken(token: string): AuthSession | null {
+  const payload = parseJwtPayload(token);
+  if (!payload) return null;
+  const userId = payload.sub || payload.id;
+  if (!userId) return null;
+
+  // Check expiration if present (exp is in seconds)
+  if (payload.exp && typeof payload.exp === 'number') {
+    if (Date.now() >= payload.exp * 1000) {
+      console.warn('[GameAuth] Provided token has expired:', new Date(payload.exp * 1000).toISOString());
+      return null;
+    }
+  }
+
+  return {
+    user: normalizeUser(payload),
+    accessToken: token,
+    expiresAt: payload.exp ? payload.exp * 1000 : undefined,
+  };
+}
+
+/**
  * Normalizes backend user payload into a clean GameUser representation.
  */
 export function normalizeUser(rawUser: any): GameUser {
@@ -142,21 +215,23 @@ export function normalizeUser(rawUser: any): GameUser {
   const name =
     meta.full_name ||
     meta.name ||
+    rawUser.name ||
     meta.username ||
+    rawUser.username ||
     rawUser?.email?.split('@')[0] ||
     'Campus Player';
 
-  const username = meta.username || rawUser?.email?.split('@')[0] || 'player';
+  const username = meta.username || rawUser.username || rawUser?.email?.split('@')[0] || 'player';
 
   return {
-    id: rawUser.id,
+    id: rawUser.id || rawUser.sub || '',
     email: rawUser.email || '',
     name,
     username,
-    avatar_url: meta.avatar_url,
-    department: meta.department,
-    course: meta.course,
-    year_level: meta.year_level,
+    avatar_url: meta.avatar_url || rawUser.avatar_url,
+    department: meta.department || rawUser.department,
+    course: meta.course || rawUser.course,
+    year_level: meta.year_level || rawUser.year_level,
     raw: rawUser,
   };
 }
@@ -179,12 +254,17 @@ export async function fetchSession(token: string): Promise<AuthSession | null> {
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        console.warn('[GameAuth] Session expired or invalid on backend (401)');
+        setStoredToken(null);
+      }
       return null;
     }
 
     const payload = await res.json();
     const rawUser = payload?.user || payload;
-    if (!rawUser?.id) return null;
+    const userId = rawUser?.id || rawUser?.sub;
+    if (!userId) return null;
 
     return {
       user: normalizeUser(rawUser),

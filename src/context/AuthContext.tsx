@@ -7,6 +7,7 @@ import {
   silentRefresh,
   logoutSession,
   extractTokenFromUrl,
+  createSessionFromToken,
   getStoredToken,
   setStoredToken,
   getSocketBaseUrl,
@@ -39,14 +40,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const webUrl = useMemo(() => getWebPortalUrl(), []);
   const loginUrl = useMemo(() => {
     if (typeof window === 'undefined') return `${webUrl}/login`;
-    const currentUrl = window.location.href;
-    return `${webUrl}/login?redirect=${encodeURIComponent(currentUrl)}`;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      url.searchParams.delete('accessToken');
+      return `${webUrl}/login?redirect=${encodeURIComponent(url.toString())}`;
+    } catch {
+      return `${webUrl}/login`;
+    }
   }, [webUrl]);
 
   /**
    * Primary session validator and mirror.
    * 1. Checks URL for ?token=...
-   * 2. Checks localStorage token
+   * 2. Hydrates immediately from valid JWT token (zero lag)
    * 3. Validates against backend /api/auth/session
    * 4. If invalid or missing, attempts silent refresh via backend HttpOnly cookie (/api/auth/refresh)
    */
@@ -59,11 +66,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const urlToken = extractTokenFromUrl();
       const currentToken = urlToken || getStoredToken();
 
-      // 2. If token exists, test with backend /auth/session
+      // 2. If token exists, hydrate immediately from valid JWT token
       if (currentToken) {
+        const localSession = createSessionFromToken(currentToken);
+        if (localSession) {
+          setSession(localSession);
+          setStoredToken(currentToken);
+          setLoading(false);
+          setIsChecking(false);
+
+          // Verify & refresh profile with backend in background without blocking
+          fetchSession(currentToken)
+            .then((serverSession) => {
+              if (serverSession) {
+                setSession(serverSession);
+              }
+            })
+            .catch(() => null);
+
+          return true;
+        }
+
+        // If local decode couldn't verify (e.g. not a JWT or expired), test with backend
         const activeSession = await fetchSession(currentToken);
         if (activeSession) {
           setSession(activeSession);
+          setStoredToken(currentToken);
           setIsChecking(false);
           setLoading(false);
           return true;
