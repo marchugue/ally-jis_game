@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { GameId } from './types';
 
-export type IconName = GameId | 'games' | 'friends';
+export type IconName = GameId | 'games' | 'friends' | 'trophy';
 
 const PATHS: Record<IconName, ReactNode> = {
   ttt: <path d="M8 3v18M16 3v18M3 8h18M3 16h18" />,
@@ -32,6 +32,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="9" cy="8" r="3.5" />
       <path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
       <path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.8.7 3 2.4 3.5 5.2" />
+    </>
+  ),
+  trophy: (
+    <>
+      <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
+      <path d="M8 6H5a1 1 0 0 0-1 1c0 2.2 1.6 3.8 4 4M16 6h3a1 1 0 0 1 1 1c0 2.2-1.6 3.8-4 4" />
+      <path d="M12 13v4M8.5 20h7M10 17h4" />
     </>
   ),
 };

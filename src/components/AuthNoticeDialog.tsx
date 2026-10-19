@@ -14,18 +14,18 @@ export function AuthNoticeDialog({ open }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-notice-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
     >
-      <div className="w-full max-w-md rounded-2xl bg-[#1A1A1A] border border-[#262626] p-6 sm:p-8 flex flex-col text-center shadow-2xl">
+      <div className="w-full max-w-md rounded-3xl bg-[#0c1622]/95 backdrop-blur-2xl border border-white/15 p-6 sm:p-8 flex flex-col text-center shadow-2xl animate-pop">
         <h2
           id="auth-notice-title"
-          className="text-xl font-bold text-[#EDEDED] mb-3"
+          className="text-2xl font-display font-bold text-white mb-3"
         >
           Sign In Required
         </h2>
 
         <p className="text-sm text-[#94A3B8] leading-relaxed mb-6">
-          You need an active ALLY-JIS account to access the Game Portal. Please log in through the main website to continue.
+          You need an active ALLY-JIS account to access the Game Arena. Please log in through the main website to continue.
         </p>
 
         <button
@@ -33,7 +33,7 @@ export function AuthNoticeDialog({ open }: Props) {
           onClick={() => {
             window.location.href = loginUrl;
           }}
-          className="w-full h-11 rounded-xl bg-[#38C185] hover:bg-[#42d494] text-[#081B12] font-semibold text-sm transition-colors cursor-pointer"
+          className="w-full h-12 rounded-xl bg-gradient-to-r from-[#38C185] to-[#42d494] hover:brightness-105 text-[#05180f] font-bold text-sm shadow-[0_0_20px_rgba(56,193,133,0.35)] transition-all cursor-pointer active:scale-95"
         >
           Log In
         </button>

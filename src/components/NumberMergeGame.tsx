@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { DuelApi } from '../hooks/useDuel';
 import type { GameUser } from '../lib/auth';
+import { GameModal, GameWoodButton } from './GameModal';
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
-type GameMode = 'duel' | 'solo';
 
 interface TileItem {
   id: number;
@@ -12,11 +13,13 @@ interface TileItem {
   isMerged?: boolean;
   isNew?: boolean;
   isFading?: boolean;
+  startPosFromEdge?: number; // 1..4 in move direction for bounce qualification
 }
 
 interface Props {
   onBack: () => void;
   user?: GameUser | null;
+  duel?: DuelApi;
 }
 
 // Spawns a new tile (90% chance of 2, 10% chance of 4) in an empty cell
@@ -43,7 +46,7 @@ function spawnTile(activeTiles: TileItem[], nextId: () => number): TileItem[] {
     isNew: true,
   };
 
-  return [...activeTiles, newTile];
+  return [...activeTiles.map((t) => ({ ...t, isNew: false })), newTile];
 }
 
 // Initializes a fresh board with 2 tiles
@@ -57,14 +60,14 @@ function createInitialTiles(nextId: () => number): TileItem[] {
 // Core sliding and collision merge engine with animation tracking
 function moveTiles(
   currentTiles: TileItem[],
-  dir: Direction,
-  nextId: () => number
+  dir: Direction
 ): {
   nextActiveTiles: TileItem[];
   fadingTiles: TileItem[];
   scoreGained: number;
   moved: boolean;
   maxVal: number;
+  bouncingTileIds: number[];
 } {
   // Only process active non-fading tiles
   const activeTiles = currentTiles.filter((t) => !t.isFading);
@@ -81,7 +84,7 @@ function moveTiles(
     grid[t.row][t.col] = t;
   }
 
-  // Define coordinate lines based on direction
+  // Define coordinate lines based on direction (line[0] is the destination edge)
   const lines: [number, number][][] = [];
   if (dir === 'LEFT') {
     for (let r = 0; r < 4; r++) {
@@ -105,6 +108,7 @@ function moveTiles(
   let scoreGained = 0;
   const nextActiveTiles: TileItem[] = [];
   const fadingTiles: TileItem[] = [];
+  const bouncingTileIds: number[] = [];
 
   for (const line of lines) {
     const lineTiles: TileItem[] = [];
@@ -118,6 +122,11 @@ function moveTiles(
       const tile = lineTiles[i];
       const prevPlaced = targetIdx > 0 ? nextActiveTiles[nextActiveTiles.length - 1] : null;
 
+      // Find the starting position of this tile in the directional line
+      // line[0] = 1st tile (at edge), line[1] = 2nd tile, line[2] = 3rd tile, line[3] = 4th tile
+      const startLineIdx = line.findIndex(([r, c]) => r === tile.row && c === tile.col);
+      const startPosFromEdge = startLineIdx + 1; // 1, 2, 3, or 4
+
       // Check if tile can merge with previous tile placed in this line
       const prevIsInThisLine =
         prevPlaced &&
@@ -129,7 +138,7 @@ function moveTiles(
 
         // The incoming tile slides smoothly into targetRow, targetCol then fades away
         fadingTiles.push({
-          id: nextId(), // give fading clone unique key so react animates slide seamlessly
+          id: tile.id, // preserve incoming tile id so browser animates slide from its origin into targetRow, targetCol
           value: tile.value,
           row: targetRow,
           col: targetCol,
@@ -144,21 +153,41 @@ function moveTiles(
         prevPlaced.isNew = false;
         scoreGained += prevPlaced.value;
         moved = true;
+
+        // Bouncy effect qualification:
+        // Trigger only if merge happens at the edge (targetIdx - 1 === 0)
+        // AND either the target tile or the incoming tile slid from 3 to 4 tiles away (startPosFromEdge >= 3).
+        if (
+          targetIdx - 1 === 0 &&
+          ((prevPlaced.startPosFromEdge ?? 0) >= 3 || startPosFromEdge >= 3)
+        ) {
+          if (!bouncingTileIds.includes(prevPlaced.id)) {
+            bouncingTileIds.push(prevPlaced.id);
+          }
+        }
       } else {
         // Slide tile to next available spot in line
         const [targetRow, targetCol] = line[targetIdx];
-        if (tile.row !== targetRow || tile.col !== targetCol) {
+        const hasMoved = tile.row !== targetRow || tile.col !== targetCol;
+        if (hasMoved) {
           moved = true;
         }
 
-        nextActiveTiles.push({
+        const placedTile: TileItem = {
           id: tile.id,
           value: tile.value,
           row: targetRow,
           col: targetCol,
           isNew: false,
           isMerged: false,
-        });
+          startPosFromEdge,
+        };
+        nextActiveTiles.push(placedTile);
+
+        // Required 3 to 4 tiles away to edge to trigger bouncy effect:
+        if (hasMoved && targetIdx === 0 && startPosFromEdge >= 3) {
+          bouncingTileIds.push(tile.id);
+        }
 
         targetIdx++;
       }
@@ -170,7 +199,7 @@ function moveTiles(
     if (t.value > maxVal) maxVal = t.value;
   }
 
-  return { nextActiveTiles, fadingTiles, scoreGained, moved, maxVal };
+  return { nextActiveTiles, fadingTiles, scoreGained, moved, maxVal, bouncingTileIds };
 }
 
 // Checks if any valid moves remain
@@ -198,39 +227,6 @@ function checkIsGameOver(tiles: TileItem[]): boolean {
   }
 
   return true;
-}
-
-// AI heuristic move generator for CPU Duel mode
-function getBestCpuDirection(tiles: TileItem[]): Direction | null {
-  const active = tiles.filter((t) => !t.isFading);
-  const directions: Direction[] = ['UP', 'LEFT', 'RIGHT', 'DOWN'];
-  let bestScore = -Infinity;
-  let bestDir: Direction | null = null;
-
-  for (const dir of directions) {
-    const { nextActiveTiles, scoreGained, moved } = moveTiles(active, dir, () => 0);
-    if (!moved) continue;
-
-    let evalScore = scoreGained * 2;
-    evalScore += (16 - nextActiveTiles.length) * 35; // Empty slots bonus
-
-    let maxVal = 0;
-    let maxInCorner = false;
-    for (const t of nextActiveTiles) {
-      if (t.value > maxVal) {
-        maxVal = t.value;
-        maxInCorner = t.row === 0 && t.col === 0;
-      }
-    }
-    if (maxInCorner) evalScore += 90;
-
-    if (evalScore > bestScore) {
-      bestScore = evalScore;
-      bestDir = dir;
-    }
-  }
-
-  return bestDir;
 }
 
 // Built-in Web Audio API Synthesizer
@@ -332,165 +328,177 @@ interface TileStyle {
   boxShadow: string;
   zIndex: number;
   textClass: string;
+  textShadowClass: string;
   liftPx: number;
 }
 
-// Color, depth offset, and 3D extruded shadow styling scaled based on tile value
+// Cartoon nature & sandstone tile styling matching the 4x4 platform aesthetic
 function getTileStyle(val: number): TileStyle {
   switch (val) {
     case 2:
       return {
-        bg: '#232730',
-        fg: '#EDEDED',
-        // 4px depth: crisp top reflection, 4px solid extruded shelf, soft ambient drop
+        bg: '#fcf6ec',
+        fg: '#543d2b',
         boxShadow:
-          'inset 0 1.5px 0.5px rgba(255,255,255,0.1), 0 4px 0 #121419, 0 6px 10px rgba(0,0,0,0.45)',
+          'inset 0 2px 1px rgba(255,255,255,0.95), inset 0 -2px 1px rgba(180,160,140,0.35), 0 3px 6px rgba(0,0,0,0.14)',
         zIndex: 12,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]',
         liftPx: 0,
       };
     case 4:
       return {
-        bg: '#2C3646',
-        fg: '#EDEDED',
-        // 5px depth: steel slate slab with 5px extruded shelf
+        bg: '#f8eed9',
+        fg: '#543d2b',
         boxShadow:
-          'inset 0 1.5px 0.5px rgba(255,255,255,0.15), 0 5px 0 #161C24, 0 7px 12px rgba(0,0,0,0.48)',
+          'inset 0 2px 1px rgba(255,255,255,0.95), inset 0 -2px 1px rgba(180,155,130,0.35), 0 3px 6px rgba(0,0,0,0.15)',
         zIndex: 14,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]',
         liftPx: 0.8,
       };
     case 8:
       return {
-        bg: '#18432E',
-        fg: '#A7F3D0',
-        // 6px depth: deep emerald forest with mint text
+        bg: '#f59b53',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 2px 1px rgba(255,255,255,0.2), 0 6px 0 #0C2419, 0 9px 14px rgba(0,0,0,0.5)',
+          'inset 0 2px 1px rgba(255,255,255,0.6), inset 0 -2.5px 1px rgba(180,80,20,0.35), 0 3px 6px rgba(245,155,83,0.35)',
         zIndex: 16,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 1.5,
       };
     case 16:
       return {
-        bg: '#1F613E',
-        fg: '#E6FFFA',
-        // 7px depth: vibrant emerald with 7px solid bottom edge
+        bg: '#f36e4f',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 2px 1px rgba(255,255,255,0.25), 0 7px 0 #103823, 0 11px 16px rgba(0,0,0,0.52)',
+          'inset 0 2px 1px rgba(255,255,255,0.6), inset 0 -2.5px 1px rgba(170,50,25,0.35), 0 3px 7px rgba(243,110,79,0.38)',
         zIndex: 18,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 2.2,
       };
     case 32:
       return {
-        bg: '#2CA36F',
-        fg: '#04160E',
-        // 8px depth: punchy ALLY emerald with colored halo
+        bg: '#54be38',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 2.5px 1.5px rgba(255,255,255,0.3), 0 8px 0 #186644, 0 13px 18px rgba(0,0,0,0.55), 0 0 14px rgba(44,163,111,0.3)',
+          'inset 0 2px 1px rgba(255,255,255,0.6), inset 0 -2.5px 1px rgba(35,110,20,0.35), 0 3px 7px rgba(84,190,56,0.38)',
         zIndex: 20,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 3,
       };
     case 64:
       return {
-        bg: '#38C185',
-        fg: '#04160E',
-        // 9px depth: signature brand emerald with radiant aura
+        bg: '#2bb673',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 2.5px 1.5px rgba(255,255,255,0.38), 0 9px 0 #1E754E, 0 15px 22px rgba(0,0,0,0.6), 0 0 20px rgba(56,193,133,0.4)',
+          'inset 0 2.5px 1.5px rgba(255,255,255,0.6), inset 0 -2.5px 1px rgba(20,100,60,0.35), 0 3.5px 8px rgba(43,182,115,0.4)',
         zIndex: 22,
         textClass: 'text-2xl sm:text-3xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 3.8,
       };
     case 128:
       return {
-        bg: '#92631E',
-        fg: '#FEF3C7',
-        // 9.5px depth: rich bronze amber with bronze ledge
+        bg: '#f6c338',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 2.5px 1.5px rgba(255,255,255,0.28), 0 9.5px 0 #56390E, 0 16px 24px rgba(0,0,0,0.62), 0 0 22px rgba(146,99,30,0.35)',
+          'inset 0 2.5px 1.5px rgba(255,255,255,0.65), inset 0 -3px 1px rgba(170,120,15,0.35), 0 4px 9px rgba(246,195,56,0.45)',
         zIndex: 24,
         textClass: 'text-xl sm:text-2xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 4.5,
       };
     case 256:
       return {
-        bg: '#B88022',
-        fg: '#FFFBEB',
-        // 10px depth: warm gold with rich 10px ledge
+        bg: '#f4a91e',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 3px 2px rgba(255,255,255,0.32), 0 10px 0 #734F12, 0 18px 26px rgba(0,0,0,0.65), 0 0 26px rgba(184,128,34,0.4)',
+          'inset 0 2.5px 1.5px rgba(255,255,255,0.65), inset 0 -3px 1px rgba(160,100,8,0.35), 0 4px 10px rgba(244,169,30,0.5)',
         zIndex: 26,
         textClass: 'text-xl sm:text-2xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 5.2,
       };
     case 512:
       return {
-        bg: '#D99528',
-        fg: '#1A1204',
-        // 10.5px depth: radiant gold monolith
+        bg: '#ea8d15',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 3px 2px rgba(255,255,255,0.38), 0 10.5px 0 #885B13, 0 20px 28px rgba(0,0,0,0.68), 0 0 30px rgba(217,149,40,0.45)',
+          'inset 0 3px 2px rgba(255,255,255,0.7), inset 0 -3.5px 1px rgba(150,80,5,0.4), 0 4.5px 11px rgba(234,141,21,0.55)',
         zIndex: 28,
         textClass: 'text-xl sm:text-2xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 5.8,
       };
     case 1024:
       return {
-        bg: '#F0B247',
-        fg: '#1A1204',
-        // 11.5px depth: signature ALLY gold with bold bottom ledge
+        bg: '#e8453c',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 3px 2px rgba(255,255,255,0.45), 0 11.5px 0 #A17020, 0 22px 32px rgba(0,0,0,0.72), 0 0 36px rgba(240,178,71,0.55)',
+          'inset 0 3px 2px rgba(255,255,255,0.7), inset 0 -3.5px 1px rgba(140,30,25,0.4), 0 5px 12px rgba(232,69,60,0.6)',
         zIndex: 30,
         textClass: 'text-lg sm:text-xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
         liftPx: 6.5,
       };
     case 2048:
       return {
-        bg: '#FBBF24',
-        fg: '#1A1204',
-        // 12.5px depth: champion crown gold with intense aura
+        bg: 'linear-gradient(135deg, #ffd752 0%, #f5a623 100%)',
+        fg: '#ffffff',
         boxShadow:
-          'inset 0 3.5px 2.5px rgba(255,255,255,0.55), 0 12.5px 0 #B45309, 0 24px 36px rgba(0,0,0,0.76), 0 0 42px rgba(251,191,36,0.65)',
+          'inset 0 3px 2px rgba(255,255,255,0.85), inset 0 -3.5px 1px rgba(160,95,8,0.4), 0 5px 14px rgba(245,166,35,0.65), 0 0 20px rgba(255,215,82,0.5)',
         zIndex: 35,
         textClass: 'text-lg sm:text-xl font-black',
+        textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
         liftPx: 7.2,
       };
     default:
       if (val > 2048) {
         return {
-          bg: '#EC4899',
-          fg: '#FFFFFF',
-          // 13.5px depth: cosmic pink crystal
+          bg: 'linear-gradient(135deg, #f472b6 0%, #c084fc 100%)',
+          fg: '#ffffff',
           boxShadow:
-            'inset 0 3.5px 2.5px rgba(255,255,255,0.6), 0 13.5px 0 #831843, 0 26px 40px rgba(0,0,0,0.8), 0 0 46px rgba(236,72,153,0.75)',
+            'inset 0 3px 2px rgba(255,255,255,0.85), inset 0 -3.5px 1px rgba(110,40,160,0.4), 0 5px 14px rgba(192,132,252,0.65)',
           zIndex: 40,
           textClass: 'text-base sm:text-lg font-black',
+          textShadowClass: 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]',
           liftPx: 8,
         };
       }
       return {
-        bg: '#18181D',
+        bg: '#fcf6ec',
         fg: 'transparent',
-        boxShadow: '0 4px 0 #0F0F12',
+        boxShadow: 'none',
         zIndex: 10,
         textClass: '',
+        textShadowClass: '',
         liftPx: 0,
       };
   }
 }
 
-export function NumberMergeGame({ onBack, user }: Props) {
+export function NumberMergeGame({ onBack, duel }: Props) {
+  // Re-render timer every 500ms when in duel mode
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!duel) return;
+    const interval = setInterval(() => forceTick((t) => t + 1), 500);
+    return () => clearInterval(interval);
+  }, [duel]);
+
+  const endsAt = duel?.session?.state?.endsAt;
+  const duelSecondsLeft = duel && endsAt ? Math.max(0, Math.ceil((endsAt - duel.now()) / 1000)) : null;
+  const opponentScore = duel?.session?.scores?.opponent ?? 0;
+  const opponentDone = Boolean(duel?.session?.state?.opponentDone);
   const nextIdRef = useRef(1);
   const getNextId = useCallback(() => nextIdRef.current++, []);
 
   const [playerTiles, setPlayerTiles] = useState<TileItem[]>(() => createInitialTiles(getNextId));
-  const [cpuTiles, setCpuTiles] = useState<TileItem[]>(() => createInitialTiles(getNextId));
   const [playerScore, setPlayerScore] = useState(0);
-  const [cpuScore, setCpuScore] = useState(0);
   const [bestScore, setBestScore] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const s = localStorage.getItem('ally_merge_best');
@@ -499,44 +507,10 @@ export function NumberMergeGame({ onBack, user }: Props) {
     return 0;
   });
 
-  const [mode, setMode] = useState<GameMode>('duel');
   const [playerOver, setPlayerOver] = useState(false);
-  const [cpuOver, setCpuOver] = useState(false);
   const [hasWon2048, setHasWon2048] = useState(false);
-  const [soundOn, setSoundOn] = useState(sfx.enabled);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cpuAnimTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Directional landing bounce animation state & refs
-  const [isBouncing, setIsBouncing] = useState(false);
-  const [bounceDir, setBounceDir] = useState<Direction | null>(null);
-  const [bounceSeq, setBounceSeq] = useState(0);
-  const bounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const landingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const playerTilesRef = useRef(playerTiles);
-  playerTilesRef.current = playerTiles;
-
-  // Return to games on Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onBack();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onBack]);
-
-  // Clean timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
-      if (cpuAnimTimeoutRef.current) clearTimeout(cpuAnimTimeoutRef.current);
-      if (landingTimeoutRef.current) clearTimeout(landingTimeoutRef.current);
-      if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
-    };
-  }, []);
+  const [showSettings, setShowSettings] = useState(false);
+  const [soundOn, setSoundOn] = useState(() => sfx.enabled);
 
   const toggleSound = () => {
     const next = !soundOn;
@@ -545,19 +519,64 @@ export function NumberMergeGame({ onBack, user }: Props) {
     localStorage.setItem('ally_merge_sound', String(next));
   };
 
+  const boardRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Timing constants: Slide in animation duration (180ms) + explicit settle delay (80ms) before tile respawns
+  const SLIDE_DURATION_MS = 180;
+  const SPAWN_DELAY_MS = 80;
+
+  const animTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spawnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAnimatingRef = useRef(false);
+  const queuedMoveRef = useRef<Direction | null>(null);
+
+  // Directional landing bounce animation state & refs (individual tile tracking)
+  const [bouncingTileIds, setBouncingTileIds] = useState<Set<number>>(new Set());
+  const [bounceDir, setBounceDir] = useState<Direction | null>(null);
+  const [bounceSeq, setBounceSeq] = useState(0);
+  const bounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const landingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerTilesRef = useRef(playerTiles);
+  playerTilesRef.current = playerTiles;
+
+  // Return to games on Escape or close settings modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showSettings) {
+          setShowSettings(false);
+        } else {
+          onBack();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onBack, showSettings]);
+
+  // Clean timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+      if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
+      if (landingTimeoutRef.current) clearTimeout(landingTimeoutRef.current);
+      if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
+    };
+  }, []);
+
   const handleRestart = useCallback(() => {
     if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
-    if (cpuAnimTimeoutRef.current) clearTimeout(cpuAnimTimeoutRef.current);
+    if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
     if (landingTimeoutRef.current) clearTimeout(landingTimeoutRef.current);
     if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
-    setIsBouncing(false);
+    isAnimatingRef.current = false;
+    queuedMoveRef.current = null;
+    setBouncingTileIds(new Set());
     setBounceDir(null);
     setPlayerTiles(createInitialTiles(getNextId));
-    setCpuTiles(createInitialTiles(getNextId));
     setPlayerScore(0);
-    setCpuScore(0);
     setPlayerOver(false);
-    setCpuOver(false);
     setHasWon2048(false);
   }, [getNextId]);
 
@@ -566,28 +585,40 @@ export function NumberMergeGame({ onBack, user }: Props) {
       setBestScore(playerScore);
       localStorage.setItem('ally_merge_best', String(playerScore));
     }
-  }, [playerScore, bestScore]);
+    if (duel) {
+      duel.sendScore(playerScore, playerOver);
+    }
+  }, [playerScore, bestScore, duel, playerOver]);
 
-  // Primary player move handler with directional overlap & recoil spring animation
+  // Primary player move handler with physical slide in animation and delayed tile respawn
   const handlePlayerMove = useCallback(
     (dir: Direction) => {
       if (playerOver) return;
 
-      // Cancel pending slide completion timeout
-      if (animTimeoutRef.current) {
-        clearTimeout(animTimeoutRef.current);
-        animTimeoutRef.current = null;
+      // If a slide in animation is currently in flight, queue this move instead of cancelling
+      if (isAnimatingRef.current) {
+        queuedMoveRef.current = dir;
+        return;
       }
 
       // Strip any fading tiles before calculating next move
       const base = playerTilesRef.current.filter((t) => !t.isFading);
-      const { nextActiveTiles, fadingTiles, scoreGained, moved, maxVal } = moveTiles(
-        base,
-        dir,
-        getNextId
-      );
+      const {
+        nextActiveTiles,
+        fadingTiles,
+        scoreGained,
+        moved,
+        maxVal,
+        bouncingTileIds: moveBouncingIds,
+      } = moveTiles(base, dir);
 
-      if (!moved) return;
+      if (!moved) {
+        queuedMoveRef.current = null;
+        return;
+      }
+
+      // Lock animation during the slide animation and post-slide respawn delay
+      isAnimatingRef.current = true;
 
       // Audio feedback
       if (scoreGained > 0) {
@@ -603,46 +634,83 @@ export function NumberMergeGame({ onBack, user }: Props) {
 
       setPlayerScore((s) => s + scoreGained);
 
-      // Render moving active tiles and collapsing fading tiles
-      setPlayerTiles([...nextActiveTiles, ...fadingTiles]);
+      // Phase 1: Render moving active tiles and collapsing fading tiles
+      const phase1Tiles = [...nextActiveTiles, ...fadingTiles];
+      setPlayerTiles(phase1Tiles);
+      playerTilesRef.current = phase1Tiles;
 
-      // Schedule directional overlap bounce in the move direction:
+      // Schedule directional overlap bounce in the move direction for individual qualifying tiles
       if (landingTimeoutRef.current) clearTimeout(landingTimeoutRef.current);
       if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
-      setIsBouncing(false);
+      setBouncingTileIds(new Set());
 
-      // Trigger directional overlap right as tiles arrive at destination (140ms)
-      landingTimeoutRef.current = setTimeout(() => {
-        setBounceDir(dir);
-        setIsBouncing(true);
-        setBounceSeq((s) => s + 1);
+      // Only schedule bounce if at least one tile qualified (slid from 3 to 4 tiles away to edge)
+      if (moveBouncingIds.length > 0) {
+        landingTimeoutRef.current = setTimeout(() => {
+          setBounceDir(dir);
+          setBouncingTileIds(new Set(moveBouncingIds));
+          setBounceSeq((s) => s + 1);
 
-        bounceTimeoutRef.current = setTimeout(() => {
-          setIsBouncing(false);
-          bounceTimeoutRef.current = null;
-        }, 180);
-        landingTimeoutRef.current = null;
-      }, 140);
+          bounceTimeoutRef.current = setTimeout(() => {
+            setBouncingTileIds(new Set());
+            setBounceDir(null);
+            bounceTimeoutRef.current = null;
+          }, 160);
+          landingTimeoutRef.current = null;
+        }, 140);
+      }
 
-      // Schedule slide completion:
-      // After 160ms, purge fading tiles, spawn new tile, check game over
+      // Clear any pending timeouts
+      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+      if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
+
+      // Phase 2: Slide animation completes (at 180ms)
+      // Settle active tiles into place and remove fading tiles
       animTimeoutRef.current = setTimeout(() => {
-        setPlayerTiles((cur) => {
-          const activeOnly = cur.filter((t) => !t.isFading);
-          const withSpawn = spawnTile(activeOnly, getNextId);
-          if (checkIsGameOver(withSpawn)) {
-            setPlayerOver(true);
-          }
-          return withSpawn;
-        });
+        const settledTiles = nextActiveTiles.map((t) => ({
+          ...t,
+          isNew: false,
+        }));
+        setPlayerTiles(settledTiles);
+        playerTilesRef.current = settledTiles;
         animTimeoutRef.current = null;
-      }, 160);
+
+        // Phase 3: Added ms delay (80ms) AFTER slide in animations have fully finished
+        // Only now does the new tile respawn into an empty slot with its pop-in animation
+        spawnTimeoutRef.current = setTimeout(() => {
+          let updatedWithSpawn: TileItem[] = [];
+          setPlayerTiles((cur) => {
+            const activeOnly = cur.filter((t) => !t.isFading);
+            updatedWithSpawn = spawnTile(activeOnly, getNextId);
+            if (checkIsGameOver(updatedWithSpawn)) {
+              setPlayerOver(true);
+              if (duel) {
+                duel.sendScore(playerScore, true);
+              }
+            }
+            return updatedWithSpawn;
+          });
+          playerTilesRef.current = updatedWithSpawn;
+
+          spawnTimeoutRef.current = null;
+          isAnimatingRef.current = false;
+
+          // If a move was queued during the slide/delay, execute it now cleanly
+          if (queuedMoveRef.current) {
+            const nextDir = queuedMoveRef.current;
+            queuedMoveRef.current = null;
+            handlePlayerMove(nextDir);
+          }
+        }, SPAWN_DELAY_MS);
+      }, SLIDE_DURATION_MS);
     },
     [playerOver, hasWon2048, getNextId]
   );
 
-  // Keyboard controls
+  // Keyboard controls: Arrow Keys + WASD (disabled while settings modal is open)
   useEffect(() => {
+    if (showSettings) return;
+
     const onKey = (e: KeyboardEvent) => {
       if (['ArrowUp', 'KeyW'].includes(e.code)) {
         e.preventDefault();
@@ -661,7 +729,7 @@ export function NumberMergeGame({ onBack, user }: Props) {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handlePlayerMove]);
+  }, [handlePlayerMove, showSettings]);
 
   // Touch Swipe controls
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -688,424 +756,348 @@ export function NumberMergeGame({ onBack, user }: Props) {
     }
   };
 
-  // CPU Bot ticker in Duel mode
-  useEffect(() => {
-    if (mode !== 'duel' || cpuOver || playerOver) return;
-
-    const interval = setInterval(() => {
-      setCpuTiles((prevTiles) => {
-        const base = prevTiles.filter((t) => !t.isFading);
-        if (checkIsGameOver(base)) {
-          setCpuOver(true);
-          return base;
-        }
-
-        const bestDir = getBestCpuDirection(base);
-        if (!bestDir) {
-          setCpuOver(true);
-          return base;
-        }
-
-        const { nextActiveTiles, fadingTiles, scoreGained, moved } = moveTiles(
-          base,
-          bestDir,
-          getNextId
-        );
-
-        if (!moved) return base;
-
-        setCpuScore((s) => s + scoreGained);
-
-        if (cpuAnimTimeoutRef.current) clearTimeout(cpuAnimTimeoutRef.current);
-        cpuAnimTimeoutRef.current = setTimeout(() => {
-          setCpuTiles((cur) => {
-            const activeOnly = cur.filter((t) => !t.isFading);
-            const withSpawn = spawnTile(activeOnly, getNextId);
-            if (checkIsGameOver(withSpawn)) {
-              setCpuOver(true);
-            }
-            return withSpawn;
-          });
-          cpuAnimTimeoutRef.current = null;
-        }, 190);
-
-        return [...nextActiveTiles, ...fadingTiles];
-      });
-    }, 700);
-
-    return () => {
-      clearInterval(interval);
-      if (cpuAnimTimeoutRef.current) clearTimeout(cpuAnimTimeoutRef.current);
-    };
-  }, [mode, cpuOver, playerOver, getNextId]);
-
-  let playerMaxTile = 0;
-  for (const t of playerTiles) {
-    if (!t.isFading && t.value > playerMaxTile) playerMaxTile = t.value;
-  }
-
-  let cpuMaxTile = 0;
-  for (const t of cpuTiles) {
-    if (!t.isFading && t.value > cpuMaxTile) cpuMaxTile = t.value;
-  }
-
-  const isMatchEnded = playerOver && (mode === 'solo' || cpuOver);
-
   return (
-    <div
-      ref={containerRef}
-      className="w-full max-w-[480px] mx-auto flex flex-col items-center animate-pop select-none"
-      aria-label="Number Merge Duel Gameplay"
-    >
-      {/* Top Navigation & Controls Bar */}
-      <div className="w-full flex items-center justify-between mb-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1A1A1E] border border-[#26262E] text-xs font-semibold text-[#94A3B8] hover:text-[#EDEDED] hover:border-[#38C185]/50 transition-all duration-150 active:scale-95 group shadow-sm"
-          aria-label="Back to Games"
-        >
-          <svg
-            className="w-4 h-4 text-[#94A3B8] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#38C185]"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Games</span>
-        </button>
-
-        <div className="flex items-center gap-2">
-          {/* Mode Switcher */}
-          <div className="flex items-center p-0.5 bg-[#1A1A1E] rounded-full border border-[#26262E]">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('duel');
-                handleRestart();
-              }}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 ${
-                mode === 'duel'
-                  ? 'bg-[#38C185] text-[#081B12] shadow-sm'
-                  : 'text-[#94A3B8] hover:text-[#EDEDED]'
-              }`}
-            >
-              Duel vs CPU
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('solo');
-                handleRestart();
-              }}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 ${
-                mode === 'solo'
-                  ? 'bg-[#38C185] text-[#081B12] shadow-sm'
-                  : 'text-[#94A3B8] hover:text-[#EDEDED]'
-              }`}
-            >
-              Solo Run
-            </button>
-          </div>
-
-          {/* Sound Toggle */}
-          <button
-            type="button"
-            onClick={toggleSound}
-            className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1A1A1E] border border-[#26262E] text-[#94A3B8] hover:text-[#EDEDED] transition-colors"
-            title={soundOn ? 'Mute sound' : 'Unmute sound'}
-            aria-label={soundOn ? 'Mute sound' : 'Unmute sound'}
-          >
-            {soundOn ? (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                />
-              </svg>
-            ) : (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 1: HEADER (LOGO + SCORE PODS + RESTART BUTTON) */}
-      <div className="w-full flex items-center justify-between mb-4 px-1">
-        {/* Left: 2048 Emblem Logo */}
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-xl bg-[#38C185] shadow-[0_4px_0_#237D55] flex items-center justify-center text-[#081B12] font-display font-black text-lg">
-            2048
-          </div>
-          <div>
-            <h1 className="font-display font-black text-lg text-[#EDEDED] leading-none">
-              Merge Duel
-            </h1>
-            <p className="text-[11px] text-[#94A3B8] font-medium">Slide & Conquer</p>
-          </div>
-        </div>
-
-        {/* Right: Score Pods & Restart Button with 3D bottom shadow */}
-        <div className="flex items-center gap-2">
-          {/* Score Pod */}
-          <div className="px-3.5 py-1.5 rounded-xl bg-[#1F1F24] shadow-[0_4px_0_#101013] flex flex-col items-center min-w-[70px]">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#38C185]">
-              SCORE
-            </span>
-            <span className="text-base font-display font-black text-[#EDEDED] leading-none mt-0.5">
-              {playerScore}
-            </span>
-          </div>
-
-          {/* Best Score Pod */}
-          <div className="px-3.5 py-1.5 rounded-xl bg-[#1F1F24] shadow-[0_4px_0_#101013] flex flex-col items-center min-w-[70px]">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#F0B247]">
-              BEST
-            </span>
-            <span className="text-base font-display font-black text-[#EDEDED] leading-none mt-0.5">
-              {bestScore}
-            </span>
-          </div>
-
-          {/* Restart Button */}
-          <button
-            type="button"
-            onClick={handleRestart}
-            className="w-10 h-10 rounded-xl bg-[#2A2A32] shadow-[0_4px_0_#18181D] hover:bg-[#32323C] active:translate-y-1 active:shadow-none flex items-center justify-center text-[#EDEDED] transition-all duration-100"
-            title="Restart game"
-            aria-label="Restart game"
-          >
-            <svg
-              className="w-4 h-4 text-[#94A3B8] hover:text-[#EDEDED]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.6}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 2: LIVE DUEL COMPARISON BAR (WHEN IN DUEL MODE) */}
-      {mode === 'duel' && (
-        <div className="w-full mb-3.5 px-3 py-2 rounded-2xl bg-[#1A1A1E] border border-[#26262E] flex items-center justify-between text-xs">
-          {/* Player stats */}
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#38C185] animate-pulse" />
-            <span className="font-bold text-[#EDEDED]">
-              {user?.name ? user.name.split(' ')[0] : 'You'}
-            </span>
-            <span className="px-2 py-0.5 rounded-md bg-[#38C185]/15 text-[#38C185] font-black text-[11px]">
-              Tile {playerMaxTile}
-            </span>
-          </div>
-
-          <span className="text-xs font-black text-[#64748B] uppercase">VS</span>
-
-          {/* CPU stats */}
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-md bg-[#F0B247]/15 text-[#F0B247] font-black text-[11px]">
-              Tile {cpuMaxTile}
-            </span>
-            <span className="font-bold text-[#EDEDED]">CPU Bot</span>
-            <span className="text-[#94A3B8] font-bold">({cpuScore})</span>
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 3: 4x4 GAME BOARD WITH HARDWARE-ACCELERATED SLIDE & COLLIDE ANIMATIONS */}
+    <>
+      {/* ═══ Immersive Sunny Cartoon Meadow Background Layer ═══ */}
       <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="relative w-full aspect-square max-w-[440px] p-[12px] rounded-[26px] bg-[#121215] border border-[#24242A] shadow-inner select-none touch-none overflow-hidden"
+        className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
+        aria-hidden="true"
       >
-        {/* Static Background Grid Slots as recessed 3D sockets */}
-        <div className="grid grid-cols-4 grid-rows-4 gap-[10px] w-full h-full">
-          {Array.from({ length: 16 }).map((_, i) => (
-            <div
-              key={i}
-              className="w-full h-full rounded-2xl bg-[#16161B] shadow-[inset_0_2px_4px_rgba(0,0,0,0.55),0_2px_0_#0F0F12] border border-[#222228]/50"
-            />
-          ))}
-        </div>
-
-        {/* Active Animated Sliding and Colliding Tiles */}
-        <div className="absolute inset-[12px] pointer-events-none">
-          {playerTiles.map((tile) => {
-            const style = getTileStyle(tile.value);
-
-            return (
-              <div
-                key={tile.id}
-                className={`absolute rounded-2xl ${tile.isFading ? 'opacity-60' : ''}`}
-                style={{
-                  width: 'calc((100% - 30px) / 4)',
-                  height: 'calc((100% - 30px) / 4)',
-                  transform: `translate3d(calc(${tile.col} * (100% + 10px)), calc(${tile.row} * (100% + 10px)), 0)`,
-                  transition: 'transform 160ms cubic-bezier(0.2, 0.9, 0.35, 1)',
-                  zIndex: tile.isFading ? 5 : style.zIndex,
-                }}
-              >
-                {/* Physical 3D Elevation / Lift Layer based on Tile Value */}
-                <div
-                  className="w-full h-full transition-transform duration-150"
-                  style={{
-                    transform: `translateY(-${style.liftPx}px)`,
-                  }}
-                >
-                  {/* Directional Overlap & Rebound Bounce Layer (Entire Square moves in slide direction) */}
-                  <div
-                    key={isBouncing ? `bounce-${bounceSeq}` : 'idle'}
-                    className={`w-full h-full ${
-                      isBouncing && bounceDir === 'LEFT'
-                        ? 'animate-bounce-left'
-                        : isBouncing && bounceDir === 'RIGHT'
-                        ? 'animate-bounce-right'
-                        : isBouncing && bounceDir === 'UP'
-                        ? 'animate-bounce-up'
-                        : isBouncing && bounceDir === 'DOWN'
-                        ? 'animate-bounce-down'
-                        : ''
-                    }`}
-                  >
-                    {/* Visual 3D Tile Face (Whole Square with 3D Ledge, Shadows & Chamfer) */}
-                    <div
-                      style={{
-                        backgroundColor: style.bg,
-                        color: style.fg,
-                        boxShadow: style.boxShadow,
-                      }}
-                      className={`w-full h-full rounded-2xl flex items-center justify-center font-display font-black select-none ${style.textClass} ${
-                        tile.isMerged
-                          ? 'animate-merge-collide'
-                          : tile.isNew
-                          ? 'animate-spawn-pop'
-                          : ''
-                      }`}
-                    >
-                      {tile.value}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <img
+          src="/merge-meadow-bg.jpg"
+          alt=""
+          className="w-full h-full object-cover object-center filter saturate-[1.12] brightness-[1.02]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#184878]/30 via-transparent to-[#04120a]/40" />
       </div>
 
-      {/* SECTION 4: TACTILE CONTROLS (KEYBOARD HINT & 3D ARROW D-PAD) */}
-      <div className="w-full mt-4 flex items-center justify-between px-2">
-        <p className="text-xs text-[#64748B] flex items-center gap-1.5">
-          <span>Use</span>
-          <kbd className="px-1.5 py-0.5 rounded bg-[#1F1F24] border border-[#2B2B32] text-[10px] text-[#94A3B8]">
-            Arrow Keys
-          </kbd>
-          <span>or swipe</span>
-        </p>
-
-        {/* 3D Extruded Arrow D-Pad */}
-        <div className="grid grid-cols-3 gap-1.5 w-[140px]">
-          <div />
-          <button
-            type="button"
-            onClick={() => handlePlayerMove('UP')}
-            className="w-10 h-10 rounded-xl bg-[#222228] shadow-[0_4px_0_#141418] hover:bg-[#2A2A32] active:translate-y-1 active:shadow-none flex items-center justify-center text-[#EDEDED] transition-all"
-            aria-label="Move Up"
-          >
-            ▲
-          </button>
-          <div />
-
-          <button
-            type="button"
-            onClick={() => handlePlayerMove('LEFT')}
-            className="w-10 h-10 rounded-xl bg-[#222228] shadow-[0_4px_0_#141418] hover:bg-[#2A2A32] active:translate-y-1 active:shadow-none flex items-center justify-center text-[#EDEDED] transition-all"
-            aria-label="Move Left"
-          >
-            ◀
-          </button>
-          <button
-            type="button"
-            onClick={() => handlePlayerMove('DOWN')}
-            className="w-10 h-10 rounded-xl bg-[#222228] shadow-[0_4px_0_#141418] hover:bg-[#2A2A32] active:translate-y-1 active:shadow-none flex items-center justify-center text-[#EDEDED] transition-all"
-            aria-label="Move Down"
-          >
-            ▼
-          </button>
-          <button
-            type="button"
-            onClick={() => handlePlayerMove('RIGHT')}
-            className="w-10 h-10 rounded-xl bg-[#222228] shadow-[0_4px_0_#141418] hover:bg-[#2A2A32] active:translate-y-1 active:shadow-none flex items-center justify-center text-[#EDEDED] transition-all"
-            aria-label="Move Right"
-          >
-            ▶
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 5: MATCH CONCLUSION MODAL / BANNER */}
-      {isMatchEnded && (
-        <div className="w-full mt-4 p-4 rounded-2xl bg-[#1A1A1E] border border-[#282830] shadow-xl flex flex-col items-center gap-3 animate-pop">
-          <div className="text-center">
-            {mode === 'duel' ? (
-              <p className="font-display font-bold text-lg text-[#EDEDED]">
-                {playerScore > cpuScore ? (
-                  <span className="text-[#38C185]">🎉 YOU WON THE DUEL!</span>
-                ) : playerScore === cpuScore ? (
-                  <span className="text-[#94A3B8]">🤝 DUEL TIED!</span>
-                ) : (
-                  <span className="text-[#F0B247]">🤖 CPU BOT OUTSCORED YOU!</span>
-                )}
-              </p>
-            ) : (
-              <p className="font-display font-bold text-lg text-[#EDEDED]">
-                {hasWon2048 ? (
-                  <span className="text-[#38C185]">🏆 2048 CHAMPION!</span>
-                ) : (
-                  <span className="text-[#94A3B8]">GAME OVER — OUT OF MOVES!</span>
-                )}
-              </p>
-            )}
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Final Score: {playerScore} {mode === 'duel' ? `| CPU Score: ${cpuScore}` : ''}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleRestart}
-              className="h-[40px] px-6 rounded-xl font-bold text-xs uppercase tracking-wider bg-[#38C185] shadow-[0_4px_0_#237D55] text-[#081B12] hover:bg-[#42d494] active:translate-y-1 active:shadow-none transition-all duration-100"
-            >
-              Play Again
-            </button>
+      {/* Floating Game Scene (Fixed 100dvh viewport, zero scroll, touch locked) */}
+      <div className="relative z-10 w-full max-w-[440px] h-[100dvh] max-h-[100dvh] mx-auto pt-5 pb-6 sm:pt-7 sm:pb-8 px-3 flex flex-col items-center justify-between overflow-hidden select-none touch-none overscroll-none">
+        
+        {/* Top Header Group: Back Button, Game Logo & Score/Controls Bar */}
+        <div className="w-full flex flex-col items-center flex-shrink-0 gap-2 sm:gap-2.5">
+          {/* Top Floating Row: Back Button (Only arrow and text label, no container) */}
+          <div className="w-full max-w-[420px] sm:max-w-[440px] flex items-center justify-between px-1">
             <button
               type="button"
               onClick={onBack}
-              className="h-[40px] px-5 rounded-xl font-bold text-xs uppercase tracking-wider bg-[#2A2A32] shadow-[0_4px_0_#18181D] text-[#EDEDED] hover:bg-[#32323C] active:translate-y-1 active:shadow-none transition-all duration-100"
+              className="flex items-center gap-1.5 text-white/95 hover:text-white font-bold text-sm transition-all duration-150 active:scale-95 group drop-shadow-[0_2px_5px_rgba(0,0,0,0.65)] cursor-pointer"
+              aria-label="Back to Games"
             >
-              Back to Games
+              <svg
+                className="w-5 h-5 text-white transition-transform group-hover:-translate-x-1"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.8} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="tracking-wide">Back to Games</span>
             </button>
           </div>
+
+          {/* Center: Centered 2048 Merge Game Logo */}
+          <div className="w-full flex items-center justify-center">
+            <img
+              src="/merge-logo.png"
+              alt="2048 Merge"
+              className="h-10 sm:h-12 md:h-13 w-auto max-w-[210px] sm:max-w-[240px] object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.45)] select-none hover:scale-105 transition-transform"
+              draggable={false}
+            />
+          </div>
+
+          {/* Left and Right Layout for SCORE and BEST (Reusing /ui-pod.png) with Center Restart Button */}
+          <div className="w-full max-w-[420px] sm:max-w-[440px] flex items-center justify-between px-1 select-none">
+            {/* Left: YOU SCORE Pod */}
+            <div className="relative aspect-[1.56/1] w-24 sm:w-28 flex flex-col items-center justify-center p-2">
+              <img
+                src="/ui-pod.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+                draggable={false}
+              />
+              <span className="relative z-10 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#6a4c28] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+                {duel ? 'YOU' : 'SCORE'}
+              </span>
+              <span className="relative z-10 text-lg sm:text-xl font-black font-display text-[#382613] leading-none mt-0.5 drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+                {playerScore}
+              </span>
+            </div>
+
+            {/* Center: Action Buttons / Timer */}
+            <div className="flex items-center gap-2">
+              {duel && duelSecondsLeft !== null ? (
+                <div className="relative h-10 px-3 flex flex-col items-center justify-center select-none">
+                  <img
+                    src="/ui-pod.png"
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+                    draggable={false}
+                  />
+                  <span className="relative z-10 text-[8px] font-black uppercase tracking-wider text-[#6a4c28] leading-none">
+                    TIME
+                  </span>
+                  <span className={`relative z-10 text-sm font-black font-mono leading-tight mt-0.5 ${duelSecondsLeft <= 20 ? 'text-[#DC2626] animate-pulse' : 'text-[#382613]'}`}>
+                    {Math.floor(duelSecondsLeft / 60)}:{duelSecondsLeft % 60 < 10 ? '0' : ''}{duelSecondsLeft % 60}
+                  </span>
+                </div>
+              ) : (
+                /* Restart Button (Solo only) */
+                <button
+                  type="button"
+                  onClick={handleRestart}
+                  className="relative w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-100 cursor-pointer"
+                  title="Restart game"
+                  aria-label="Restart game"
+                >
+                  <img
+                    src="/ui-button.png"
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                    draggable={false}
+                  />
+                  <svg
+                    className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 text-[#4a3219] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                </button>
+              )}
+
+              {/* Settings Button */}
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="relative w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-100 cursor-pointer"
+                title="Settings"
+                aria-label="Settings"
+              >
+                <img
+                  src="/ui-button.png"
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                  draggable={false}
+                />
+                <svg
+                  className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 text-[#4a3219] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.4}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.4}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Right: OPPONENT (in duel) or BEST (in solo) Pod */}
+            <div className="relative aspect-[1.56/1] w-24 sm:w-28 flex flex-col items-center justify-center p-2">
+              <img
+                src="/ui-pod.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+                draggable={false}
+              />
+              <span className="relative z-10 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#6a4c28] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)] truncate max-w-[80px]">
+                {duel ? (duel.opponentName.length > 8 ? `${duel.opponentName.slice(0, 7)}…` : duel.opponentName).toUpperCase() : 'BEST'}
+              </span>
+              <span className="relative z-10 text-lg sm:text-xl font-black font-display text-[#382613] leading-none mt-0.5 drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+                {duel ? opponentScore : bestScore}
+              </span>
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Live Duel Status Banner */}
+        {duel && (playerOver || opponentDone) && (
+          <div className="w-full max-w-[400px] mx-auto py-1 px-3 mb-1 rounded-xl bg-black/40 border border-[#F0B247]/40 text-center animate-pop">
+            <span className="text-xs font-bold text-[#F0B247]">
+              {playerOver && opponentDone
+                ? 'Both players finished! Calculating results...'
+                : playerOver
+                ? 'Board locked! Waiting for timer or opponent to finish...'
+                : `${duel.opponentName} finished! Keep scoring until time expires!`}
+            </span>
+          </div>
+        )}
+
+        {/* Floating 4x4 Nature Platform Board (Centered in available vertical space) */}
+        <div className="flex-1 w-full flex items-center justify-center min-h-0 my-auto py-2">
+          <div
+            ref={boardRef}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            className="relative w-full aspect-square max-w-[min(390px,calc(100dvh-250px))] sm:max-w-[min(410px,calc(100dvh-260px))] mx-auto select-none touch-none overscroll-none flex-shrink-0"
+            aria-label="2048 Merge 4x4 Board Platform"
+          >
+          {/* Grass Frame & 4x4 Stone Tile Platform Background Image */}
+          <img
+            src="/merge-platform.png"
+            alt="Merge 4x4 Platform"
+            className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 select-none"
+            draggable={false}
+          />
+
+          {/* Active Animated Sliding and Colliding Tiles */}
+          <div className="absolute inset-0 pointer-events-none">
+            {playerTiles.map((tile) => {
+              const style = getTileStyle(tile.value);
+              const isTileBouncing = bouncingTileIds.has(tile.id);
+
+              return (
+                <div
+                  key={tile.id}
+                  className={`absolute rounded-[16%] ${
+                    tile.isFading ? 'opacity-60 pointer-events-none' : ''
+                  }`}
+                  style={{
+                    left: '14.52%',
+                    top: '14.45%',
+                    width: '15.3%',
+                    height: '15.3%',
+                    transform: `translate3d(calc(${tile.col} * 121.05%), calc(${tile.row} * 121.18%), 0)`,
+                    transition: tile.isNew
+                      ? 'none'
+                      : `transform ${SLIDE_DURATION_MS}ms cubic-bezier(0.2, 0.9, 0.35, 1)`,
+                    zIndex: tile.isFading ? 5 : style.zIndex,
+                    willChange: 'transform',
+                  }}
+                >
+                  {/* Physical 3D Elevation / Lift Layer based on Tile Value */}
+                  <div
+                    className="w-full h-full rounded-[16%] transition-transform duration-150"
+                    style={{
+                      transform: `translateY(-${style.liftPx}px)`,
+                    }}
+                  >
+                    {/* Directional Overlap & Rebound Bounce Layer (Individual tile bounce) */}
+                    <div
+                      key={isTileBouncing ? `bounce-${bounceSeq}` : 'idle'}
+                      className={`w-full h-full rounded-[16%] ${
+                        isTileBouncing && bounceDir === 'LEFT'
+                          ? 'animate-bounce-left'
+                          : isTileBouncing && bounceDir === 'RIGHT'
+                          ? 'animate-bounce-right'
+                          : isTileBouncing && bounceDir === 'UP'
+                          ? 'animate-bounce-up'
+                          : isTileBouncing && bounceDir === 'DOWN'
+                          ? 'animate-bounce-down'
+                          : ''
+                      }`}
+                    >
+                      {/* Visual 3D Tile Face (Matching Platform Sandstone, Leaves & Nature Palette) */}
+                      <div
+                        style={{
+                          background: style.bg,
+                          color: style.fg,
+                          boxShadow: style.boxShadow,
+                        }}
+                        className={`w-full h-full rounded-[16%] flex items-center justify-center font-display font-black select-none ${
+                          style.textClass
+                        } ${
+                          tile.isMerged
+                            ? 'animate-merge-collide'
+                            : tile.isNew
+                            ? 'animate-spawn-pop'
+                            : ''
+                        }`}
+                      >
+                        <span className={style.textShadowClass}>
+                          {tile.value}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
+
+      {/* ═══ SETTINGS MODAL (USING PUBLIC /modal-container.png & /ui-wood-btn.png) ═══ */}
+      <GameModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        maxWidthClass="max-w-[360px] sm:max-w-[380px]"
+        title={
+          <h3 className="font-display font-black text-2xl sm:text-3xl text-[#5c4028] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+            Settings
+          </h3>
+        }
+      >
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 w-full">
+          {/* Sound Toggle */}
+          <GameWoodButton colSpan={1} onClick={toggleSound}>
+            {soundOn ? 'Sound: ON' : 'Sound: OFF'}
+          </GameWoodButton>
+
+          {/* Restart Run */}
+          <GameWoodButton
+            colSpan={1}
+            onClick={() => {
+              setShowSettings(false);
+              handleRestart();
+            }}
+          >
+            Restart
+          </GameWoodButton>
+
+          {/* Resume / Back to Game */}
+          <GameWoodButton colSpan={2} onClick={() => setShowSettings(false)}>
+            Back to Game
+          </GameWoodButton>
+
+          {/* Exit to Main Menu */}
+          <GameWoodButton colSpan={2} onClick={onBack}>
+            Exit to Games
+          </GameWoodButton>
+        </div>
+      </GameModal>
+
+      {/* ═══ GAME OVER / MATCH CONCLUSION MODAL (MATCHING NATURE WOOD/STONE THEME) ═══ */}
+      <GameModal
+        open={playerOver && !duel}
+        maxWidthClass="max-w-[360px] sm:max-w-[380px]"
+        title={
+          <div className="text-center">
+            <h3 className="font-display font-black text-2xl sm:text-3xl text-[#5c4028] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              {hasWon2048 ? '🏆 2048 CHAMPION!' : 'GAME OVER'}
+            </h3>
+            <p className="text-xs font-bold text-[#8c6743] mt-1">
+              Final Score: {playerScore}
+            </p>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-2.5 w-full">
+          <GameWoodButton colSpan={2} onClick={handleRestart}>
+            Play Again
+          </GameWoodButton>
+          <GameWoodButton colSpan={2} onClick={onBack}>
+            Back to Games
+          </GameWoodButton>
+        </div>
+      </GameModal>
+    </>
   );
 }

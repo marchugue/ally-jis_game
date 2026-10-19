@@ -126,14 +126,17 @@ export function FriendsPanel({
 
   return (
     <aside
-      className="friends sticky top-0 h-[100dvh] overflow-y-auto p-[40px_20px_24px] border-l border-[#262626] bg-[#121212] [--ring:theme(colors.game.bg)] max-[959px]:static max-[959px]:h-auto max-[959px]:border-0 max-[959px]:p-[max(18px,env(safe-area-inset-top,0px))_18px_calc(96px+env(safe-area-inset-bottom,0px))]"
+      className="friends sticky top-0 h-[100dvh] overflow-y-auto p-[36px_20px_28px] border-l border-white/10 bg-[#09111b]/65 backdrop-blur-2xl shadow-[-12px_0_40px_rgba(0,0,0,0.35)] max-[959px]:static max-[959px]:h-auto max-[959px]:border-0 max-[959px]:bg-transparent max-[959px]:backdrop-blur-none max-[959px]:shadow-none max-[959px]:p-[max(18px,env(safe-area-inset-top,0px))_18px_calc(96px+env(safe-area-inset-bottom,0px))]"
       aria-label="Friends and Matches"
     >
       <header className="flex items-center justify-between mb-6 min-h-[40px] px-2 max-[959px]:mb-5 max-[959px]:px-0">
-        <div>
-          <h2 className="font-display font-semibold text-xl leading-[1.1] -tracking-[0.02em] text-[#EDEDED] max-[959px]:text-[26px]">
-            Friends
+        <div className="flex items-center gap-2">
+          <h2 className="font-display font-bold text-xl leading-none text-white tracking-tight">
+            Opponents
           </h2>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#38C185]/20 text-[#38C185] border border-[#38C185]/30">
+            {allOpponents.filter((o) => o.status === 'online').length} Online
+          </span>
         </div>
         <span className="hidden max-[959px]:inline-flex">
           <Avatar person={mePerson} size="lg" />
@@ -144,12 +147,15 @@ export function FriendsPanel({
         {/* ═══ Section 1: Allied Connections ═══ */}
         <div>
           <div className="flex items-center justify-between px-2 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
-              Allied
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
+              <span>Allied Connections</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/5 border border-white/10 text-[#94A3B8]">
+                {activeAllies.length}
+              </span>
             </span>
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {activeAllies.length > 0 ? (
               activeAllies.map((f) => {
                 const selected = f.id === selectedId;
@@ -164,11 +170,11 @@ export function FriendsPanel({
                       onSelect={onSelect}
                     />
                     {canInvite && (
-                      <div className="flex gap-2 py-1 pb-2.5 pl-[58px]">
+                      <div className="flex gap-2 py-1 pb-2 pl-[56px] animate-pop">
                         {GAMES.map((g) => (
                           <button
                             key={g.id}
-                            className="w-[38px] h-[38px] rounded-xl bg-[#1A1A1A] border border-[#262626] grid place-items-center text-[#EDEDED] transition-all duration-150 hover:bg-[#202024] hover:text-[#38C185] hover:border-[#38C185]/50 active:scale-[0.92]"
+                            className="w-[38px] h-[38px] rounded-xl bg-white/10 border border-white/15 grid place-items-center text-white transition-all duration-150 hover:bg-[#38C185] hover:text-[#06180f] hover:border-[#38C185] active:scale-95 shadow-sm"
                             title={g.name}
                             aria-label={`Invite ${f.name} to ${g.name}`}
                             onClick={() => onInvite(g.id)}
@@ -184,7 +190,7 @@ export function FriendsPanel({
             ) : isLoading ? (
               <div className="py-4 text-center text-xs text-[#94A3B8]">Loading allies...</div>
             ) : (
-              <div className="p-3 text-center rounded-xl bg-[#1A1A1A]/40 border border-[#262626]/50 text-xs text-[#94A3B8]">
+              <div className="p-3 text-center rounded-2xl bg-white/[0.03] border border-white/10 text-xs text-[#94A3B8]">
                 No allied connections yet.
               </div>
             )}
@@ -194,12 +200,15 @@ export function FriendsPanel({
         {/* ═══ Section 2: Anonymous Matches ═══ */}
         <div>
           <div className="flex items-center justify-between px-2 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
-              <span>Anonymous</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
+              <span>Campus Matches</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/5 border border-white/10 text-[#94A3B8]">
+                {activeMatches.length}
+              </span>
             </span>
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {activeMatches.length > 0 ? (
               activeMatches.map((m) => {
                 const selected = m.id === selectedId;
@@ -214,11 +223,11 @@ export function FriendsPanel({
                       onSelect={onSelect}
                     />
                     {canInvite && (
-                      <div className="flex gap-2 py-1 pb-2.5 pl-[58px]">
+                      <div className="flex gap-2 py-1 pb-2 pl-[56px] animate-pop">
                         {GAMES.map((g) => (
                           <button
                             key={g.id}
-                            className="w-[38px] h-[38px] rounded-xl bg-[#1A1A1A] border border-[#262626] grid place-items-center text-[#EDEDED] transition-all duration-150 hover:bg-[#202024] hover:text-[#38C185] hover:border-[#38C185]/50 active:scale-[0.92]"
+                            className="w-[38px] h-[38px] rounded-xl bg-white/10 border border-white/15 grid place-items-center text-white transition-all duration-150 hover:bg-[#38C185] hover:text-[#06180f] hover:border-[#38C185] active:scale-95 shadow-sm"
                             title={g.name}
                             aria-label={`Invite ${m.name} to ${g.name}`}
                             onClick={() => onInvite(g.id)}
@@ -234,7 +243,7 @@ export function FriendsPanel({
             ) : isLoading ? (
               <div className="py-4 text-center text-xs text-[#94A3B8]">Loading matches...</div>
             ) : (
-              <div className="p-3 text-center rounded-xl bg-[#1A1A1A]/40 border border-[#262626]/50 text-xs text-[#94A3B8]">
+              <div className="p-3 text-center rounded-2xl bg-white/[0.03] border border-white/10 text-xs text-[#94A3B8]">
                 No active anonymous matches.
               </div>
             )}

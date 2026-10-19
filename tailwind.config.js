@@ -8,12 +8,12 @@ export default {
     extend: {
       colors: {
         game: {
-          bg: '#121212',          // Web dark canvas
-          card: '#1A1A1A',        // Web dark card
-          popover: '#1F1F1F',     // Web dark popover/modal
-          secondary: '#182232',   // Web dark secondary
-          border: '#262626',      // Web dark border
-          line: '#262626',        // Line
+          bg: '#070d14',          // Deep canvas matching landscape
+          card: '#0c1622',        // Glassmorphic card surface
+          popover: '#09111b',     // Popover/modal surface
+          secondary: '#121f2f',   // Elevated secondary
+          border: 'rgba(255, 255, 255, 0.1)',
+          line: 'rgba(255, 255, 255, 0.1)',
           primary: '#38C185',     // Web dark emerald primary
           'primary-hover': '#42d494',
           accent: '#F0B247',      // Web dark warm gold accent
@@ -21,9 +21,9 @@ export default {
           foreground: '#EDEDED',  // Web dark foreground
           
           // Semantic alias tokens
-          s1: '#1A1A1A',          // Primary container
-          s2: '#202024',          // Elevated container
-          s3: '#26262A',          // Highest elevated container
+          s1: '#0c1622',          // Primary glass container
+          s2: '#121f2f',          // Elevated container
+          s3: '#18283a',          // Highest elevated container
           tx: '#EDEDED',          // Main text
           mu: '#94A3B8',          // Muted text
           emerald: '#38C185',     // Brand emerald

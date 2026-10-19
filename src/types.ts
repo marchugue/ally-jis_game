@@ -1,6 +1,6 @@
 export type GameId = 'ttt' | 'clue' | 'merge';
 export type Presence = 'online' | 'away' | 'offline';
-export type View = 'games' | 'friends';
+export type View = 'games' | 'friends' | 'leaderboard';
 
 export interface Person {
   id: string;

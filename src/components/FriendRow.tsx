@@ -20,11 +20,11 @@ export function FriendRow({ friend, mode, selected, invited, onSelect }: Props) 
       className={`w-full flex items-center gap-3 p-[9px_10px] rounded-2xl border text-left transition-all duration-150 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${
         selected
           ? mode === 'pick'
-            ? 'bg-[#202024] border-[#38C185]'
-            : 'bg-[#1A1A1A] border-[#38C185]/60 shadow-[0_0_12px_rgba(56,193,133,0.15)]'
+            ? 'bg-[#152638] border-[#38C185] shadow-[0_0_16px_rgba(56,193,133,0.25)]'
+            : 'bg-[#132335]/90 border-[#38C185]/70 shadow-[0_0_18px_rgba(56,193,133,0.22)]'
           : mode === 'pick'
-          ? 'border-transparent hover:not(:disabled):bg-[#202024]'
-          : 'border-transparent hover:not(:disabled):bg-[#1A1A1A]'
+          ? 'border-transparent hover:not(:disabled):bg-white/5'
+          : 'border-transparent hover:not(:disabled):bg-white/5'
       }`}
       disabled={!isOnline}
       onClick={() => onSelect(friend.id)}
@@ -33,9 +33,9 @@ export function FriendRow({ friend, mode, selected, invited, onSelect }: Props) 
       <span className="relative inline-flex flex-none">
         <Avatar person={friend} size="lg" />
         <i
-          className={`absolute -right-[1px] -bottom-[1px] w-[11px] h-[11px] rounded-full border-[2.5px] border-[#121212] ${
+          className={`absolute -right-[1px] -bottom-[1px] w-[11px] h-[11px] rounded-full border-[2.5px] border-[#0a121c] ${
             isOnline
-              ? 'bg-[#38C185]'
+              ? 'bg-[#38C185] shadow-[0_0_6px_#38C185]'
               : friend.status === 'away'
               ? 'bg-[#F0B247]'
               : 'bg-[#5b5f67]'

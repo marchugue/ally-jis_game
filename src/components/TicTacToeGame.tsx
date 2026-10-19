@@ -1,15 +1,162 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { GameUser } from '../lib/auth';
+import { SettingsModal, PlayAgainDialog } from './GameModal';
+import type { DuelApi } from '../hooks/useDuel';
+import type { Series } from './DuelHost';
 
 export type Player = 'X' | 'O';
 export type BoardState = (Player | null)[];
-export type GameMode = 'ai' | 'pvp';
-export type Difficulty = 'easy' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'hard';
 
 interface Props {
   onBack: () => void;
   user?: GameUser | null;
+  /** When set, this is a LIVE 1v1 against another person — the server owns the board. */
+  duel?: DuelApi;
+  /** Running win/loss/draw tally across rematches (duel only). */
+  series?: Series;
 }
+
+/**
+ * ============================================================================
+ * MANUAL CELL POSITION CONFIGURATION (0 to 8)
+ *
+ * Adjust the position, size, and fine-tune pixel offsets of the X and O pieces
+ * for each of the 9 cells on the wooden grass platform manually.
+ *
+ * 3x3 Grid Layout:
+ * [0] [1] [2]   (Row 0: Top-Left,    Top-Center,    Top-Right)
+ * [3] [4] [5]   (Row 1: Middle-Left, Middle-Center, Middle-Right)
+ * [6] [7] [8]   (Row 2: Bottom-Left, Bottom-Center, Bottom-Right)
+ *
+ * Properties for each cell:
+ * - top:    Vertical position on platform (percentage string, e.g. '12.6%')
+ * - left:   Horizontal position on platform (percentage string, e.g. '12.2%')
+ * - width:  Cell bounding box width (percentage string, e.g. '23.2%')
+ * - height: Cell bounding box height (percentage string, e.g. '22.6%')
+ * - offsetX: Manual X nudge in pixels (positive = right, negative = left)
+ * - offsetY: Manual Y nudge in pixels (positive = down, negative = up)
+ * - scale:   Piece scale multiplier (1.0 = normal, 1.1 = +10%, etc.)
+ * ============================================================================
+ */
+export interface CellPositionConfig {
+  index: number;
+  label: string;
+  top: string;
+  left: string;
+  width: string;
+  height: string;
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+}
+
+export const CELL_POSITIONS: CellPositionConfig[] = [
+  // --- ROW 0 ---
+  {
+    index: 0,
+    label: 'Cell 0: Top-Left (Row 0, Col 0)',
+    top: '12.6%',
+    left: '12.2%',
+    width: '23.2%',
+    height: '22.6%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 1,
+    label: 'Cell 1: Top-Center (Row 0, Col 1)',
+    top: '12.6%',
+    left: '38.2%',
+    width: '23.6%',
+    height: '22.6%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 2,
+    label: 'Cell 2: Top-Right (Row 0, Col 2)',
+    top: '12.6%',
+    left: '64.4%',
+    width: '23.2%',
+    height: '22.6%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+
+  // --- ROW 1 ---
+  {
+    index: 3,
+    label: 'Cell 3: Middle-Left (Row 1, Col 0)',
+    top: '38.2%',
+    left: '12.2%',
+    width: '23.2%',
+    height: '22.4%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 4,
+    label: 'Cell 4: Center (Row 1, Col 1)',
+    top: '38.2%',
+    left: '38.2%',
+    width: '23.6%',
+    height: '22.4%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 5,
+    label: 'Cell 5: Middle-Right (Row 1, Col 2)',
+    top: '38.2%',
+    left: '64.4%',
+    width: '23.2%',
+    height: '22.4%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+
+  // --- ROW 2 ---
+  {
+    index: 6,
+    label: 'Cell 6: Bottom-Left (Row 2, Col 0)',
+    top: '63.8%',
+    left: '12.2%',
+    width: '23.2%',
+    height: '22.2%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 7,
+    label: 'Cell 7: Bottom-Center (Row 2, Col 1)',
+    top: '63.8%',
+    left: '38.2%',
+    width: '23.6%',
+    height: '22.2%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+  {
+    index: 8,
+    label: 'Cell 8: Bottom-Right (Row 2, Col 2)',
+    top: '63.8%',
+    left: '64.4%',
+    width: '23.2%',
+    height: '22.2%',
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1.0,
+  },
+];
 
 const WINNING_COMBINATIONS = [
   // Rows
@@ -41,7 +188,7 @@ function checkWin(board: BoardState): {
   return { winner: null, combo: null, isDraw };
 }
 
-// Minimax AI with heuristic tree search
+// Minimax AI with heuristic tree search (Easy, Medium, Hard)
 function getBestMove(
   board: BoardState,
   difficulty: Difficulty,
@@ -55,8 +202,13 @@ function getBestMove(
 
   if (availableMoves.length === 0) return -1;
 
-  // Easy mode: 65% random move, 35% smart
+  // Easy mode: 65% random move
   if (difficulty === 'easy' && Math.random() < 0.65) {
+    return availableMoves[Math.floor(Math.random() * availableMoves.length)];
+  }
+
+  // Medium mode: 30% random move
+  if (difficulty === 'medium' && Math.random() < 0.3) {
     return availableMoves[Math.floor(Math.random() * availableMoves.length)];
   }
 
@@ -83,13 +235,15 @@ function getBestMove(
   // Center preference on first turns
   if (board[4] === null) return 4;
 
+  const maxDepth = difficulty === 'medium' ? 2 : 5;
+
   // Full minimax search
   let bestScore = -Infinity;
   let move = availableMoves[0];
 
   for (const idx of availableMoves) {
     board[idx] = aiPlayer;
-    const score = minimax(board, 0, false, aiPlayer, humanPlayer);
+    const score = minimax(board, 0, false, aiPlayer, humanPlayer, maxDepth);
     board[idx] = null;
     if (score > bestScore) {
       bestScore = score;
@@ -105,13 +259,14 @@ function minimax(
   depth: number,
   isMaximizing: boolean,
   aiPlayer: Player,
-  humanPlayer: Player
+  humanPlayer: Player,
+  maxDepth: number = 5
 ): number {
   const result = checkWin(board);
   if (result.winner === aiPlayer) return 10 - depth;
   if (result.winner === humanPlayer) return depth - 10;
   if (result.isDraw) return 0;
-  if (depth >= 5) return 0;
+  if (depth >= maxDepth) return 0;
 
   const available: number[] = [];
   for (let i = 0; i < 9; i++) {
@@ -122,7 +277,7 @@ function minimax(
     let maxEval = -Infinity;
     for (const move of available) {
       board[move] = aiPlayer;
-      const evaluation = minimax(board, depth + 1, false, aiPlayer, humanPlayer);
+      const evaluation = minimax(board, depth + 1, false, aiPlayer, humanPlayer, maxDepth);
       board[move] = null;
       maxEval = Math.max(maxEval, evaluation);
     }
@@ -131,7 +286,7 @@ function minimax(
     let minEval = Infinity;
     for (const move of available) {
       board[move] = humanPlayer;
-      const evaluation = minimax(board, depth + 1, true, aiPlayer, humanPlayer);
+      const evaluation = minimax(board, depth + 1, true, aiPlayer, humanPlayer, maxDepth);
       board[move] = null;
       minEval = Math.min(minEval, evaluation);
     }
@@ -161,7 +316,7 @@ class SoundFx {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => { });
+      this.ctx.resume().catch(() => {});
     }
   }
 
@@ -183,7 +338,7 @@ class SoundFx {
       gain.connect(this.ctx.destination);
       osc.start(now);
       osc.stop(now + 0.08);
-    } catch { }
+    } catch {}
   }
 
   playWin() {
@@ -205,7 +360,7 @@ class SoundFx {
         osc.start(start);
         osc.stop(start + 0.3);
       });
-    } catch { }
+    } catch {}
   }
 
   playDraw() {
@@ -227,75 +382,63 @@ class SoundFx {
         osc.start(start);
         osc.stop(start + 0.22);
       });
-    } catch { }
+    } catch {}
   }
 }
 
 const sfx = new SoundFx();
 
-// Chunky X Glyph matching the reference geometry with rounded ends
-function ChunkyX({ className = 'w-14 h-14' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} fill="none">
-      <line
-        x1="16"
-        y1="16"
-        x2="48"
-        y2="48"
-        stroke="currentColor"
-        strokeWidth="11"
-        strokeLinecap="round"
-      />
-      <line
-        x1="48"
-        y1="16"
-        x2="16"
-        y2="48"
-        stroke="currentColor"
-        strokeWidth="11"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+export function TicTacToeGame({ onBack, duel, series }: Props) {
+  const [localBoard, setBoard] = useState<BoardState>(() => Array(9).fill(null));
+  const [localTurn, setTurn] = useState<Player>('X');
 
-// Chunky O Glyph matching the reference geometry with thick ring
-function ChunkyO({ className = 'w-14 h-14' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} fill="none">
-      <circle
-        cx="32"
-        cy="32"
-        r="17"
-        stroke="currentColor"
-        strokeWidth="11"
-      />
-    </svg>
-  );
-}
+  // In a duel the server's board is the single source of truth.
+  const duelState = duel?.session.state as
+    | { board?: BoardState; myMark?: Player }
+    | undefined;
+  const myMark: Player = duelState?.myMark ?? 'X';
+  const board: BoardState = duel ? duelState?.board ?? (Array(9).fill(null) as BoardState) : localBoard;
+  const turn: Player = duel ? (duel.isMyTurn ? myMark : myMark === 'X' ? 'O' : 'X') : localTurn;
 
-export function TicTacToeGame({ onBack }: Props) {
-  const [board, setBoard] = useState<BoardState>(() => Array(9).fill(null));
-  const [turn, setTurn] = useState<Player>('X');
-  const [mode, setMode] = useState<GameMode>('ai');
-  const [difficulty, setDifficulty] = useState<Difficulty>('hard');
+  // Re-render twice a second so the per-move countdown stays live.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!duel) return;
+    const id = setInterval(() => forceTick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, [duel]);
+  const turnEndsAt = (duel?.session.state as { turnEndsAt?: number | null } | undefined)?.turnEndsAt ?? null;
+  const secondsLeft = duel && turnEndsAt ? Math.max(0, Math.ceil((turnEndsAt - duel.now()) / 1000)) : null;
   const [scores, setScores] = useState({ x: 0, o: 0, ties: 0 });
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  // Settings & Duel state
   const [soundOn, setSoundOn] = useState(sfx.enabled);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>('hard');
+  const isDueling = Boolean(duel);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlayAgainDialog, setShowPlayAgainDialog] = useState(false);
 
   const { winner, combo, isDraw } = useMemo(() => checkWin(board), [board]);
-  const isGameOver = Boolean(winner || isDraw);
+  const isGameOver = Boolean(winner || isDraw || (duel && duel.session.status !== 'active'));
 
-  // Return to game catalog on Escape
+  // Return to game catalog on Escape or close modals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onBack();
+      if (e.key === 'Escape') {
+        if (showSettings) {
+          setShowSettings(false);
+        } else if (showPlayAgainDialog) {
+          setShowPlayAgainDialog(false);
+        } else {
+          onBack();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onBack]);
+  }, [onBack, showSettings, showPlayAgainDialog]);
 
   const toggleSound = () => {
     const next = !soundOn;
@@ -304,21 +447,49 @@ export function TicTacToeGame({ onBack }: Props) {
     localStorage.setItem('ally_ttt_sound', String(next));
   };
 
+  const cycleDifficulty = () => {
+    setDifficulty((prev) => {
+      if (prev === 'easy') return 'medium';
+      if (prev === 'medium') return 'hard';
+      return 'easy';
+    });
+  };
+
   useEffect(() => {
+    if (duel && (winner || isDraw)) {
+      // Result dialog + tally are handled by <DuelHost/>; just play the right jingle.
+      if (winner && winner === myMark) sfx.playWin();
+      else sfx.playDraw();
+      return;
+    }
     if (winner) {
       sfx.playWin();
       setScores((prev) => ({
         ...prev,
         [winner === 'X' ? 'x' : 'o']: prev[winner === 'X' ? 'x' : 'o'] + 1,
       }));
+      const timer = setTimeout(() => {
+        setShowPlayAgainDialog(true);
+      }, 700);
+      return () => clearTimeout(timer);
     } else if (isDraw) {
       sfx.playDraw();
       setScores((prev) => ({ ...prev, ties: prev.ties + 1 }));
+      const timer = setTimeout(() => {
+        setShowPlayAgainDialog(true);
+      }, 700);
+      return () => clearTimeout(timer);
     }
-  }, [winner, isDraw]);
+  }, [winner, isDraw]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCellClick = useCallback(
     (index: number) => {
+      if (duel) {
+        if (board[index] !== null || isGameOver || !duel.isMyTurn || duel.session.status !== 'active') return;
+        sfx.playPop(myMark);
+        void duel.sendMove({ type: 'place', cell: index });
+        return;
+      }
       if (board[index] !== null || isGameOver || isAiThinking) return;
 
       const nextBoard = [...board];
@@ -329,12 +500,21 @@ export function TicTacToeGame({ onBack }: Props) {
       const nextPlayer: Player = turn === 'X' ? 'O' : 'X';
       setTurn(nextPlayer);
     },
-    [board, isGameOver, isAiThinking, turn]
+    [board, isGameOver, isAiThinking, turn, duel, myMark]
   );
 
-  // AI turn
+  // Opponent just moved → play their mark's sound.
+  const filledCount = board.filter(Boolean).length;
+  const prevFilled = useRef(filledCount);
   useEffect(() => {
-    if (mode !== 'ai' || turn !== 'O' || isGameOver) return;
+    if (duel && filledCount > prevFilled.current && duel.isMyTurn) sfx.playPop(myMark === 'X' ? 'O' : 'X');
+    prevFilled.current = filledCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filledCount]);
+
+  // AI turn (only runs when NOT in dueling state)
+  useEffect(() => {
+    if (isDueling || turn !== 'O' || isGameOver) return;
 
     setIsAiThinking(true);
     const timer = setTimeout(() => {
@@ -352,305 +532,327 @@ export function TicTacToeGame({ onBack }: Props) {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [mode, turn, board, difficulty, isGameOver]);
+  }, [turn, board, isGameOver, isDueling, difficulty]);
 
   const handlePlayAgain = () => {
     setBoard(Array(9).fill(null));
     setTurn('X');
     setIsAiThinking(false);
-  };
-
-  const handleResetScores = () => {
-    setScores({ x: 0, o: 0, ties: 0 });
-    handlePlayAgain();
+    setShowPlayAgainDialog(false);
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full max-w-[440px] mx-auto flex flex-col items-center animate-pop select-none"
-      aria-label="Tic-Tac-Toe Gameplay"
-    >
-      {/* Top Controls Bar: Back button, Mode toggles, Sound */}
-      <div className="w-full flex items-center justify-between mb-5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1A1A1E] border border-[#26262E] text-xs font-semibold text-[#94A3B8] hover:text-[#EDEDED] hover:border-[#38C185]/50 transition-all duration-150 active:scale-95 group shadow-sm"
-          aria-label="Back to Games"
-        >
-          <svg
-            className="w-4 h-4 text-[#94A3B8] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#38C185]"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Games</span>
-        </button>
-
-        <div className="flex items-center gap-2">
-          {/* Mode Switcher */}
-          <div className="flex items-center p-0.5 bg-[#1A1A1E] rounded-full border border-[#26262E]">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('ai');
-                handlePlayAgain();
-              }}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 ${mode === 'ai'
-                ? 'bg-[#38C185] text-[#081B12] shadow-sm'
-                : 'text-[#94A3B8] hover:text-[#EDEDED]'
-                }`}
-            >
-              vs CPU
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('pvp');
-                handlePlayAgain();
-              }}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-150 ${mode === 'pvp'
-                ? 'bg-[#38C185] text-[#081B12] shadow-sm'
-                : 'text-[#94A3B8] hover:text-[#EDEDED]'
-                }`}
-            >
-              2P
-            </button>
-          </div>
-
-          {mode === 'ai' && (
-            <button
-              type="button"
-              onClick={() => setDifficulty((d) => (d === 'hard' ? 'easy' : 'hard'))}
-              className="px-2.5 py-1 rounded-full bg-[#1A1A1E] border border-[#26262E] text-[10px] font-bold text-[#94A3B8] hover:text-[#EDEDED] transition-colors"
-              title={`Bot Difficulty: ${difficulty === 'hard' ? 'Unbeatable' : 'Casual'}`}
-            >
-              {difficulty === 'hard' ? 'Hard' : 'Easy'}
-            </button>
-          )}
-
-          {/* Sound Toggle */}
-          <button
-            type="button"
-            onClick={toggleSound}
-            className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1A1A1E] border border-[#26262E] text-[#94A3B8] hover:text-[#EDEDED] transition-colors"
-            title={soundOn ? 'Mute sound' : 'Unmute sound'}
-            aria-label={soundOn ? 'Mute sound' : 'Unmute sound'}
-          >
-            {soundOn ? (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                />
-              </svg>
-            ) : (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-              </svg>
-            )}
-          </button>
-        </div>
+    <>
+      {/* ═══ Immersive Sunny Cartoon Meadow Background Layer ═══ */}
+      <div
+        className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        <img
+          src="/merge-meadow-bg.jpg"
+          alt=""
+          className="w-full h-full object-cover object-center filter saturate-[1.12] brightness-[1.02]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#184878]/30 via-transparent to-[#04120a]/40" />
       </div>
 
-      {/* SECTION 1: HEADER (LOGO + TURN PILL + RESTART BUTTON) */}
-      <div className="w-full flex items-center justify-between mb-5 px-1">
-        {/* Left: XO Logo */}
-        <div className="flex items-center gap-1.5" aria-label="Tic Tac Toe Logo">
-          <div className="text-[#38C185]">
-            <ChunkyX className="w-8 h-8" />
+      {/* Floating Game Scene (Fixed 100dvh viewport, zero scroll, touch locked) */}
+      <div className="relative z-10 w-full max-w-[440px] h-[100dvh] max-h-[100dvh] mx-auto pt-5 pb-5 sm:pt-7 sm:pb-7 px-3 flex flex-col items-center justify-between overflow-hidden select-none touch-none overscroll-none">
+        
+        {/* Top Header Group: Back Button, Game Logo & Turn/Controls Bar */}
+        <div className="w-full flex flex-col items-center flex-shrink-0 gap-2 sm:gap-2.5">
+          {/* Top Floating Row: Back Button (Only arrow and text, no container) */}
+          <div className="w-full flex items-center justify-between px-1">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-white/95 hover:text-white font-bold text-sm transition-all duration-150 active:scale-95 group drop-shadow-[0_2px_5px_rgba(0,0,0,0.65)] cursor-pointer"
+              aria-label="Back to Games"
+            >
+              <svg
+                className="w-5 h-5 text-white transition-transform group-hover:-translate-x-1"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.8} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="tracking-wide">Back</span>
+            </button>
           </div>
-          <div className="text-[#F0B247]">
-            <ChunkyO className="w-8 h-8" />
-          </div>
-        </div>
 
-        {/* Center: Turn Pill with 3D bottom extruded shadow */}
-        <div
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1F1F24] shadow-[0_4px_0_#101013] text-xs font-black tracking-wider uppercase select-none transition-transform"
-          aria-live="polite"
-        >
-          {turn === 'X' ? (
-            <div className="text-[#38C185]">
-              <ChunkyX className="w-4 h-4" />
-            </div>
-          ) : (
-            <div className="text-[#F0B247]">
-              <ChunkyO className="w-4 h-4" />
-            </div>
-          )}
-          <span className="text-[#EDEDED] font-display font-extrabold">TURN</span>
-        </div>
-
-        {/* Right: Restart Button with 3D bottom extruded shadow */}
-        <button
-          type="button"
-          onClick={handlePlayAgain}
-          className="w-11 h-11 rounded-xl bg-[#2A2A32] shadow-[0_4px_0_#18181D] hover:bg-[#32323C] active:translate-y-1 active:shadow-[0_0px_0_#18181D] flex items-center justify-center text-[#EDEDED] transition-all duration-100"
-          title="Restart game"
-          aria-label="Restart game"
-        >
-          <svg
-            className="w-5 h-5 text-[#94A3B8] hover:text-[#EDEDED]"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.6}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          {/* Center: Centered Tic Tac Toe Game Logo */}
+          <div className="w-full flex items-center justify-center">
+            <img
+              src="/tictactoelogo.png"
+              alt="Tic Tac Toe"
+              className="h-10 sm:h-12 w-auto max-w-[190px] sm:max-w-[220px] object-contain filter drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] select-none hover:scale-105 transition-transform"
+              draggable={false}
             />
-          </svg>
-        </button>
-      </div>
-
-      {/* SECTION 2: THE 3x3 GRID (WITH 3D EXTRUDED BOTTOM SHADOWS) */}
-      <div className="w-full grid grid-cols-3 gap-3.5 sm:gap-4 mb-5">
-        {board.map((cell, idx) => {
-          const isWinningCell = combo?.includes(idx);
-          const isEmpty = cell === null;
-
-          return (
-            <button
-              key={idx}
-              type="button"
-              disabled={isGameOver || isAiThinking || !isEmpty}
-              onClick={() => handleCellClick(idx)}
-              onMouseEnter={() => setHoverIndex(idx)}
-              onMouseLeave={() => setHoverIndex(null)}
-              aria-label={`Cell ${idx + 1}, ${cell || 'Empty'}`}
-              className={`aspect-square rounded-2xl flex items-center justify-center select-none transition-all duration-100 ${isWinningCell
-                ? cell === 'X'
-                  ? 'bg-[#38C185] text-[#081B12] shadow-[0_8px_0_#237D55] translate-y-0 scale-[1.02]'
-                  : 'bg-[#F0B247] text-[#1A1305] shadow-[0_8px_0_#B88022] translate-y-0 scale-[1.02]'
-                : 'bg-[#1F1F24] shadow-[0_8px_0_#101013] hover:bg-[#25252C] active:translate-y-1 active:shadow-[0_4px_0_#101013]'
-                }`}
-            >
-              {/* Placed Mark */}
-              {cell === 'X' && (
-                <div
-                  className={`animate-pop ${isWinningCell ? 'text-[#081B12]' : 'text-[#38C185]'
-                    }`}
-                >
-                  <ChunkyX className="w-12 h-12 sm:w-16 sm:h-16" />
-                </div>
-              )}
-
-              {cell === 'O' && (
-                <div
-                  className={`animate-pop ${isWinningCell ? 'text-[#1A1305]' : 'text-[#F0B247]'
-                    }`}
-                >
-                  <ChunkyO className="w-12 h-12 sm:w-16 sm:h-16" />
-                </div>
-              )}
-
-              {/* Ghost Hover Preview for Current Player */}
-              {isEmpty && !isGameOver && !isAiThinking && hoverIndex === idx && (
-                <div className="opacity-20 transition-opacity">
-                  {turn === 'X' ? (
-                    <div className="text-[#38C185]">
-                      <ChunkyX className="w-12 h-12 sm:w-16 sm:h-16" />
-                    </div>
-                  ) : (
-                    <div className="text-[#F0B247]">
-                      <ChunkyO className="w-12 h-12 sm:w-16 sm:h-16" />
-                    </div>
-                  )}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* SECTION 3: BOTTOM SCOREBOARD (3 PODS WITH MATCHING 3D EXTRUDED SHADOWS) */}
-      <div className="w-full grid grid-cols-3 gap-3.5 sm:gap-4">
-        {/* Left: X (YOU) */}
-        <div className="rounded-2xl bg-[#38C185] shadow-[0_6px_0_#237D55] p-3 sm:p-3.5 flex flex-col items-center justify-center text-[#081B12] select-none">
-          <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">
-            {`X (YOU)`}
-          </span>
-          <span className="text-2xl sm:text-3xl font-display font-black mt-0.5 leading-none">
-            {scores.x}
-          </span>
-        </div>
-
-        {/* Center: TIES */}
-        <div className="rounded-2xl bg-[#2A2A32] shadow-[0_6px_0_#18181D] p-3 sm:p-3.5 flex flex-col items-center justify-center text-[#EDEDED] select-none">
-          <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#94A3B8]">
-            TIES
-          </span>
-          <span className="text-2xl sm:text-3xl font-display font-black mt-0.5 leading-none">
-            {scores.ties}
-          </span>
-        </div>
-
-        {/* Right: O (CPU / OPPONENT) */}
-        <div className="rounded-2xl bg-[#F0B247] shadow-[0_6px_0_#B88022] p-3 sm:p-3.5 flex flex-col items-center justify-center text-[#1A1305] select-none">
-          <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">
-            {`O (P2)`}
-          </span>
-          <span className="text-2xl sm:text-3xl font-display font-black mt-0.5 leading-none">
-            {scores.o}
-          </span>
-        </div>
-      </div>
-
-      {/* SECTION 4: ROUND RESULT BANNER (UPON COMPLETION) */}
-      {isGameOver && (
-        <div className="w-full mt-5 p-4 rounded-2xl bg-[#1A1A1E] border border-[#282830] shadow-xl flex flex-col items-center gap-3 animate-pop">
-          <div className="text-center">
-            {winner ? (
-              <p className="font-display font-bold text-lg text-[#EDEDED] flex items-center justify-center gap-2">
-                <span className={winner === 'X' ? 'text-[#38C185]' : 'text-[#F0B247]'}>
-                  {winner === 'X'
-                    ? mode === 'ai'
-                      ? '🎉 YOU WON THE ROUND!'
-                      : '🎉 PLAYER X WON THE ROUND!'
-                    : mode === 'ai'
-                      ? '🤖 CPU WON THE ROUND!'
-                      : '🎉 PLAYER O WON THE ROUND!'}
-                </span>
-              </p>
-            ) : (
-              <p className="font-display font-bold text-lg text-[#94A3B8]">
-                🤝 ROUND TIED!
-              </p>
-            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handlePlayAgain}
-              className="h-[40px] px-6 rounded-xl font-bold text-xs uppercase tracking-wider bg-[#38C185] shadow-[0_4px_0_#237D55] text-[#081B12] hover:bg-[#42d494] active:translate-y-1 active:shadow-none transition-all duration-100"
-            >
-              Play Again
-            </button>
-            <button
-              type="button"
-              onClick={handleResetScores}
-              className="h-[40px] px-5 rounded-xl font-bold text-xs uppercase tracking-wider bg-[#2A2A32] shadow-[0_4px_0_#18181D] text-[#EDEDED] hover:bg-[#32323C] active:translate-y-1 active:shadow-none transition-all duration-100"
-            >
-              Reset Scores
-            </button>
+          {/* Turn Pod, Refresh Button & Settings Button */}
+          <div className="w-full max-w-[420px] sm:max-w-[440px] flex items-center justify-between px-1 select-none">
+            {/* Turn Indicator inside generated stone pod */}
+            <div className="relative h-10 px-3.5 sm:px-4 flex items-center justify-center gap-2 select-none">
+              <img
+                src="/ui-pod.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+                draggable={false}
+              />
+              <img
+                src={turn === 'X' ? '/x.png' : '/o.png'}
+                alt={turn}
+                className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 object-contain filter drop-shadow-sm"
+                draggable={false}
+              />
+              <span className="relative z-10 font-black text-xs uppercase tracking-wider text-[#4a3219] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+                {duel
+                  ? isGameOver
+                    ? 'GAME OVER'
+                    : duel.isMyTurn
+                    ? `YOUR TURN${secondsLeft !== null ? ` · ${secondsLeft}s` : ''}`
+                    : `${duel.opponentName.length > 12 ? `${duel.opponentName.slice(0, 11)}…` : duel.opponentName}${secondsLeft !== null ? ` · ${secondsLeft}s` : ''}`
+                  : 'TURN'}
+              </span>
+            </div>
+
+            {/* Right Action Buttons: Refresh & Settings */}
+            <div className="flex items-center gap-2">
+              {/* Refresh Button (hidden in a live duel — rematches go through the result dialog) */}
+              {!duel && (
+              <button
+                type="button"
+                onClick={handlePlayAgain}
+                className="relative w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-100 cursor-pointer"
+                title="Restart game"
+                aria-label="Restart game"
+              >
+                <img
+                  src="/ui-button.png"
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                  draggable={false}
+                />
+                <svg
+                  className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 text-[#4a3219] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.8}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              </button>
+              )}
+
+              {/* Settings Button */}
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="relative w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-100 cursor-pointer"
+                title="Settings"
+                aria-label="Settings"
+              >
+                <img
+                  src="/ui-button.png"
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                  draggable={false}
+                />
+                <svg
+                  className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 text-[#4a3219] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.4}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.4}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Floating 3x3 Nature Platform Board (Centered in available vertical space) */}
+        <div className="flex-1 w-full flex items-center justify-center min-h-0 my-auto py-1 sm:py-2">
+          <div
+            className="relative w-full aspect-square max-w-[min(360px,calc(100dvh-280px))] sm:max-w-[min(380px,calc(100dvh-290px))] mx-auto select-none touch-none overscroll-none flex-shrink-0"
+            aria-label="Tic Tac Toe 3x3 Board Platform"
+          >
+          {/* Grass Frame & 3x3 Stone Tile Platform Background Image */}
+          <img
+            src="/tictactoe-platform.png"
+            alt="Tic Tac Toe Platform"
+            className="absolute inset-0 w-full h-full object-fill pointer-events-none z-0 select-none"
+            draggable={false}
+          />
+
+          {/* The 9 Interactive Cell Buttons (Positioned by CELL_POSITIONS array) */}
+          {board.map((cell, idx) => {
+            const pos = CELL_POSITIONS[idx] || CELL_POSITIONS[0];
+            const isWinningCell = combo?.includes(idx);
+            const isEmpty = cell === null;
+
+            return (
+              <button
+                key={idx}
+                type="button"
+                disabled={isGameOver || isAiThinking || !isEmpty || Boolean(duel && !duel.isMyTurn)}
+                onClick={() => handleCellClick(idx)}
+                onMouseEnter={() => setHoverIndex(idx)}
+                onMouseLeave={() => setHoverIndex(null)}
+                aria-label={`${pos.label}, ${cell || 'Empty'}`}
+                style={{
+                  position: 'absolute',
+                  top: pos.top,
+                  left: pos.left,
+                  width: pos.width,
+                  height: pos.height,
+                  transform: `translate(${pos.offsetX}px, ${pos.offsetY}px) scale(${pos.scale})`,
+                }}
+                className="z-10 rounded-[18px] flex items-center justify-center cursor-pointer transition-transform duration-100 hover:scale-[1.03] active:scale-95 group focus:outline-none"
+              >
+                {/* Placed Mark: x.png for X */}
+                {cell === 'X' && (
+                  <img
+                    src="/x.png"
+                    alt="X"
+                    className={`w-[84%] h-[84%] object-contain select-none transition-all duration-200 ${
+                      isWinningCell
+                        ? 'animate-winning-piece-x'
+                        : 'animate-pop filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.35)]'
+                    }`}
+                    draggable={false}
+                  />
+                )}
+
+                {/* Placed Mark: o.png for O */}
+                {cell === 'O' && (
+                  <img
+                    src="/o.png"
+                    alt="O"
+                    className={`w-[84%] h-[84%] object-contain select-none transition-all duration-200 ${
+                      isWinningCell
+                        ? 'animate-winning-piece-o'
+                        : 'animate-pop filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.35)]'
+                    }`}
+                    draggable={false}
+                  />
+                )}
+
+                {/* Ghost Hover Preview for Current Player */}
+                {isEmpty && !isGameOver && !isAiThinking && hoverIndex === idx && (!duel || duel.isMyTurn) && (
+                  <img
+                    src={turn === 'X' ? '/x.png' : '/o.png'}
+                    alt="preview"
+                    className="w-[76%] h-[76%] object-contain opacity-40 group-hover:scale-105 transition-all pointer-events-none select-none filter brightness-110"
+                    draggable={false}
+                  />
+                )}
+              </button>
+            );
+          })}
+          </div>
+        </div>
+
+        {/* Bottom Scoreboard Pods (Generated Containers Matching the Platform) */}
+        {/* No X or O icons on label, strictly YOU, TIES, and P2 */}
+        <div className="w-full max-w-[420px] sm:max-w-[440px] grid grid-cols-3 gap-2.5 sm:gap-3.5 flex-shrink-0 select-none">
+          {/* Left: YOU */}
+          <div className="relative aspect-[1.56/1] flex flex-col items-center justify-center p-2">
+            <img
+              src="/ui-pod.png"
+              alt=""
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+              draggable={false}
+            />
+            <span className="relative z-10 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#6a4c28] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              YOU
+            </span>
+            <span className="relative z-10 text-lg sm:text-xl font-black font-display text-[#382613] leading-none mt-0.5 drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              {duel ? series?.you ?? 0 : scores.x}
+            </span>
+          </div>
+
+          {/* Center: TIES */}
+          <div className="relative aspect-[1.56/1] flex flex-col items-center justify-center p-2">
+            <img
+              src="/ui-pod.png"
+              alt=""
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+              draggable={false}
+            />
+            <span className="relative z-10 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#6a4c28] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              TIES
+            </span>
+            <span className="relative z-10 text-lg sm:text-xl font-black font-display text-[#382613] leading-none mt-0.5 drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              {duel ? series?.draws ?? 0 : scores.ties}
+            </span>
+          </div>
+
+          {/* Right: P2 */}
+          <div className="relative aspect-[1.56/1] flex flex-col items-center justify-center p-2">
+            <img
+              src="/ui-pod.png"
+              alt=""
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
+              draggable={false}
+            />
+            <span className="relative z-10 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#6a4c28] drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              {duel ? (duel.opponentName.length > 9 ? `${duel.opponentName.slice(0, 8)}…` : duel.opponentName).toUpperCase() : 'P2'}
+            </span>
+            <span className="relative z-10 text-lg sm:text-xl font-black font-display text-[#382613] leading-none mt-0.5 drop-shadow-[0_1px_0_rgba(255,255,255,0.6)]">
+              {duel ? series?.opponent ?? 0 : scores.o}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ SETTINGS MODAL ═══ */}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        isDueling={isDueling}
+        soundOn={soundOn}
+        onToggleSound={toggleSound}
+        difficulty={difficulty}
+        onCycleDifficulty={cycleDifficulty}
+        onSwitchToCpu={
+          duel
+            ? undefined
+            : () => {
+                setShowSettings(false);
+                handlePlayAgain();
+              }
+        }
+        onExitToMainMenu={onBack}
+      />
+
+      {/* ═══ DIALOG FOR PLAY AGAIN (UPON MATCH COMPLETION) ═══ */}
+      <PlayAgainDialog
+        open={showPlayAgainDialog && isGameOver && !duel}
+        winner={winner}
+        isDraw={isDraw}
+        isDueling={isDueling}
+        onPlayAgain={handlePlayAgain}
+        onExitToMainMenu={onBack}
+      />
+    </>
   );
 }

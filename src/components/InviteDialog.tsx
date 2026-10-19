@@ -48,9 +48,9 @@ export function InviteDialog({
       aria-labelledby="dt"
       onClose={onClose}
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="w-[min(440px,calc(100vw-32px))] p-0 border border-[#262626] rounded-[28px] bg-[#1A1A1A] text-[#EDEDED] backdrop:bg-black/70 backdrop:backdrop-blur-sm open:animate-pop m-auto shadow-2xl [--ring:theme(colors.game.s1)]"
+      className="w-[min(460px,calc(100vw-32px))] p-0 border border-white/15 rounded-[30px] bg-[#0c1622]/95 backdrop-blur-2xl text-[#EDEDED] backdrop:bg-black/75 backdrop:backdrop-blur-md open:animate-pop m-auto shadow-[0_25px_70px_rgba(0,0,0,0.7)] overflow-hidden select-none"
     >
-      <div className="p-[26px_22px_20px]">
+      <div className="p-[28px_24px_22px]">
         {shown && waitingFor ? (
           <div className="text-center py-[14px] pb-1 flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-4">
@@ -62,12 +62,12 @@ export function InviteDialog({
               </span>
               <Avatar person={waitingFor} size="xl" />
             </div>
-            <h3 id="dt" className="font-display font-semibold text-[22px] leading-[1.2] pt-3.5 -tracking-[0.01em] text-[#EDEDED]">
+            <h3 id="dt" className="font-display font-bold text-[22px] leading-[1.2] pt-3.5 -tracking-[0.01em] text-white">
               Waiting for {waitingFor.name}
             </h3>
             <p className="text-[#94A3B8] mb-[18px] text-sm">{shown.name}</p>
             <button
-              className="h-[42px] px-[22px] rounded-full bg-[#252528] border border-[#333338] text-[#EDEDED] font-semibold text-sm transition-all duration-150 hover:bg-[#2e2e33] active:scale-[0.96]"
+              className="h-[42px] px-[22px] rounded-full bg-white/10 border border-white/15 text-[#EDEDED] font-semibold text-sm transition-all duration-150 hover:bg-white/20 active:scale-[0.96]"
               onClick={onCancel}
             >
               Cancel invite
@@ -76,13 +76,13 @@ export function InviteDialog({
         ) : (
           shown && (
             <>
-              <h3 id="dt" className="font-display font-semibold text-[22px] leading-[1.2] px-2 pb-1 -tracking-[0.01em] text-[#EDEDED]">
+              <h3 id="dt" className="font-display font-bold text-[22px] leading-[1.2] px-2 pb-1 -tracking-[0.01em] text-white">
                 Invite to {shown.name}
               </h3>
               <p className="text-xs text-[#94A3B8] px-2 pb-4">
                 Choose an online ally or anonymous match to duel
               </p>
-              <div className="flex flex-col gap-1 max-h-[340px] overflow-y-auto pr-1" role="radiogroup" aria-label="Choose an opponent">
+              <div className="flex flex-col gap-1.5 max-h-[340px] overflow-y-auto pr-1" role="radiogroup" aria-label="Choose an opponent">
                 {opponents.length > 0 ? (
                   opponents.map((f) => (
                     <FriendRow
@@ -95,20 +95,20 @@ export function InviteDialog({
                     />
                   ))
                 ) : (
-                  <div className="py-8 text-center text-xs text-[#94A3B8] bg-[#121212] rounded-xl border border-[#262626]">
+                  <div className="py-8 text-center text-xs text-[#94A3B8] bg-white/[0.03] rounded-2xl border border-white/10">
                     No online friends or matches available right now.
                   </div>
                 )}
               </div>
-              <div className="flex justify-end gap-2 mt-[18px]">
+              <div className="flex justify-end gap-2.5 mt-5 pt-3 border-t border-white/10">
                 <button
-                  className="h-[42px] px-[22px] rounded-full bg-transparent text-[#94A3B8] font-semibold text-sm hover:bg-[#252528] hover:text-[#EDEDED] transition-all duration-150 active:scale-[0.96]"
+                  className="h-[42px] px-5 rounded-full bg-transparent text-[#94A3B8] font-semibold text-sm hover:bg-white/10 hover:text-white transition-all duration-150 active:scale-95"
                   onClick={onClose}
                 >
                   Close
                 </button>
                 <button
-                  className="h-[42px] px-[22px] rounded-full bg-[#38C185] border border-[#38C185] text-[#081B12] font-semibold text-sm hover:bg-[#42d494] shadow-[0_0_16px_rgba(56,193,133,0.3)] transition-all duration-150 active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="h-[42px] px-6 rounded-full bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#05180f] font-bold text-sm hover:brightness-105 shadow-[0_0_18px_rgba(56,193,133,0.35)] transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={!canSend}
                   onClick={onSend}
                 >
