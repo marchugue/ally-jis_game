@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useGameAuth } from './AuthContext';
+import { useGameSocket } from './GameSocketContext';
 import { getApiBaseUrl } from '../lib/auth';
 
 interface PresenceContextValue {
@@ -24,11 +25,12 @@ const PresenceContext = createContext<PresenceContextValue>({
   refreshOnlineUsers: async () => {},
 });
 
-const HEARTBEAT_INTERVAL_MS = 30000; // 30 seconds (matches web)
-const POLL_INTERVAL_MS = 30000;      // 30 seconds (matches web)
+const HEARTBEAT_INTERVAL_MS = 25000;
+const POLL_INTERVAL_MS = 30000;
 
 export function PresenceProvider({ children }: { children: ReactNode }) {
   const { user, token } = useGameAuth();
+  const { socket } = useGameSocket();
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
   const sendHeartbeat = useCallback(async () => {
@@ -41,6 +43,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ platform: 'game' }),
       });
     } catch {
       // presence heartbeat is best-effort
@@ -48,14 +51,14 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [user, token]);
 
   const refreshOnlineUsers = useCallback(async () => {
-    if (!token) return;
     try {
       const apiBase = getApiBaseUrl();
-      const res = await fetch(`${apiBase}/presence/online`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${apiBase}/presence/online`, { headers });
       if (res.ok) {
         const data = await res.json();
         const ids: string[] = data?.userIds || [];
@@ -67,40 +70,80 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   useEffect(() => {
-    if (!user || !token) {
-      setOnlineUserIds(new Set());
-      return;
-    }
-
-    // 1. Initial heartbeat & online list
-    void sendHeartbeat();
+    // Initial fetch
     void refreshOnlineUsers();
 
-    // 2. Set interval timers
-    const heartbeatInterval = setInterval(() => {
+    if (user && token) {
       void sendHeartbeat();
+    }
+
+    const heartbeatInterval = setInterval(() => {
+      if (user && token) {
+        void sendHeartbeat();
+      }
     }, HEARTBEAT_INTERVAL_MS);
 
     const pollInterval = setInterval(() => {
       void refreshOnlineUsers();
     }, POLL_INTERVAL_MS);
 
-    // 3. Immediately sync on tab focus / visibility
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        void sendHeartbeat();
+        if (user && token) void sendHeartbeat();
         void refreshOnlineUsers();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // ── Real-Time Socket Presence Listeners ─────────────────────────────────
+    const onUserOnline = (payload: { userId?: string; user_id?: string }) => {
+      const id = payload?.userId || payload?.user_id;
+      if (!id) return;
+      setOnlineUserIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    };
+
+    const onUserOffline = (payload: { userId?: string; user_id?: string }) => {
+      const id = payload?.userId || payload?.user_id;
+      if (!id) return;
+      setOnlineUserIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    };
+
+    const onPresenceChange = (payload: { userId?: string; user_id?: string; status?: string }) => {
+      if (payload?.status === 'offline') {
+        onUserOffline(payload);
+      } else {
+        onUserOnline(payload);
+      }
+    };
+
+    if (socket) {
+      socket.on('presence:online', onUserOnline);
+      socket.on('presence:offline', onUserOffline);
+      socket.on('presence:change', onPresenceChange);
+    }
+
     return () => {
       clearInterval(heartbeatInterval);
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (socket) {
+        socket.off('presence:online', onUserOnline);
+        socket.off('presence:offline', onUserOffline);
+        socket.off('presence:change', onPresenceChange);
+      }
     };
-  }, [user?.id, token, sendHeartbeat, refreshOnlineUsers]);
+  }, [user?.id, token, socket, sendHeartbeat, refreshOnlineUsers]);
 
   const value = useMemo(
     () => ({

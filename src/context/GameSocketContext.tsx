@@ -69,7 +69,8 @@ export function GameSocketProvider({ children }: { children: ReactNode }) {
     }
 
     const s = io(getSocketBaseUrl(), {
-      auth: { token },
+      auth: { token, platform: 'game' },
+      query: { platform: 'game' },
       transports: ['websocket', 'polling'],
       reconnectionDelayMax: 4000,
     });

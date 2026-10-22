@@ -28,6 +28,7 @@ export interface Game {
   tint: string;
   artWidth: string;
   featured?: boolean;
+  coverImage?: string;
 }
 
 export interface Pending {

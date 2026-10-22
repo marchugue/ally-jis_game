@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { GAMES, ME } from '../data';
-import type { Friend, Game, Pending, Person } from '../types';
+import type { Friend, Game, GameId, Pending, Person } from '../types';
 import { Avatar } from './Avatar';
 import { FriendRow } from './FriendRow';
 
@@ -15,6 +15,7 @@ interface Props {
   onSend: () => void;
   onCancel: () => void;
   onClose: () => void;
+  onPlaySolo?: (id: GameId) => void;
 }
 
 export function InviteDialog({
@@ -28,6 +29,7 @@ export function InviteDialog({
   onSend,
   onCancel,
   onClose,
+  onPlaySolo,
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -100,20 +102,36 @@ export function InviteDialog({
                   </div>
                 )}
               </div>
-              <div className="flex justify-end gap-2.5 mt-5 pt-3 border-t border-white/10">
-                <button
-                  className="h-[42px] px-5 rounded-full bg-transparent text-[#94A3B8] font-semibold text-sm hover:bg-white/10 hover:text-white transition-all duration-150 active:scale-95"
-                  onClick={onClose}
-                >
-                  Close
-                </button>
-                <button
-                  className="h-[42px] px-6 rounded-full bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#05180f] font-bold text-sm hover:brightness-105 shadow-[0_0_18px_rgba(56,193,133,0.35)] transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                  disabled={!canSend}
-                  onClick={onSend}
-                >
-                  Send invite
-                </button>
+              <div className="flex items-center justify-between gap-2.5 mt-5 pt-3 border-t border-white/10">
+                {onPlaySolo && shown ? (
+                  <button
+                    type="button"
+                    className="h-[40px] px-4 rounded-full bg-white/10 hover:bg-white/20 text-[#EDEDED] font-semibold text-xs transition-all duration-150 active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => {
+                      onClose();
+                      onPlaySolo(shown.id);
+                    }}
+                  >
+                    <span>Practice Solo</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    className="h-[40px] px-4 rounded-full bg-transparent text-[#94A3B8] font-semibold text-xs sm:text-sm hover:bg-white/10 hover:text-white transition-all duration-150 active:scale-95 cursor-pointer"
+                    onClick={onClose}
+                  >
+                    Close
+                  </button>
+                  <button
+                    className="h-[40px] px-5 rounded-full bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#05180f] font-bold text-xs sm:text-sm hover:brightness-105 shadow-[0_0_18px_rgba(56,193,133,0.35)] transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    disabled={!canSend}
+                    onClick={onSend}
+                  >
+                    Send invite
+                  </button>
+                </div>
               </div>
             </>
           )

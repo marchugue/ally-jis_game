@@ -750,7 +750,7 @@ export function SecretClueGame({ onBack }: Props) {
       const base = 100;
       const timeBonus = Math.max(0, timeLeft);
       const cluesCount = revealedClueIndices.length;
-      const clueBonus = cluesCount === 1 ? 60 : cluesCount === 2 ? 40 : cluesCount === 3 ? 20 : 10;
+      const clueBonus = cluesCount === 1 ? 60 : cluesCount === 2 ? 40 : cluesCount === 3 ? 20 : 0;
       const totalTurnPoints = base + timeBonus + clueBonus;
 
       setPointsAwarded(totalTurnPoints);
@@ -1065,9 +1065,11 @@ export function SecretClueGame({ onBack }: Props) {
 
           {/* Content Layer Inside Tablet */}
           <div className="relative z-10 w-[84%] flex flex-col items-center justify-center text-center pointer-events-none">
-            {/* Label on Top: SECRET WORD */}
+            {/* Label on Top: SECRET WORD (giver or resolved) or CATEGORY (guesser) */}
             <span className="font-display font-black text-[10px] sm:text-xs uppercase tracking-widest text-[#5a3e20] drop-shadow-[0_1px_0_rgba(255,255,255,0.7)] mb-1">
-              SECRET WORD
+              {role === 'giver' || roundStatus !== 'playing'
+                ? 'SECRET WORD'
+                : `CATEGORY: ${currentItem.category.toUpperCase()}`}
             </span>
 
             {/* The Word or Letter Slots */}
@@ -1115,16 +1117,16 @@ export function SecretClueGame({ onBack }: Props) {
             {/* Sub-label: Category & Letter Count or Feedback / Solved celebration */}
             <div className="flex flex-col items-center mt-1">
               {roundStatus === 'solved' && pointsAwarded > 0 ? (
-                <span
-                  className="text-[10px] font-black text-[#38C185] drop-shadow-[0_1px_0_rgba(0,0,0,0.6)] animate-bounce"
-                  title={
-                    pointsBreakdown
-                      ? `Base: +${pointsBreakdown.base} • Time: +${pointsBreakdown.time} • Clue: +${pointsBreakdown.clueBonus}`
-                      : undefined
-                  }
-                >
-                  +{pointsAwarded} PTS EARNED!
-                </span>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] font-black text-[#38C185] drop-shadow-[0_1px_0_rgba(0,0,0,0.6)] animate-bounce">
+                    +{pointsAwarded} PTS EARNED!
+                  </span>
+                  {pointsBreakdown && (
+                    <span className="text-[8px] text-[#7a5732] font-semibold mt-0.5">
+                      Base: {pointsBreakdown.base} • Time: +{pointsBreakdown.time} • Clue Bonus: +{pointsBreakdown.clueBonus} pts
+                    </span>
+                  )}
+                </div>
               ) : roundStatus === 'timeout' ? (
                 <span className="text-[10px] font-bold text-[#F87171] drop-shadow-[0_1px_0_rgba(0,0,0,0.6)]">
                   TIME EXPIRED! {role === 'giver' && pointsAwarded > 0 ? `(+${pointsAwarded} STUMP BONUS)` : ''}
@@ -1134,10 +1136,16 @@ export function SecretClueGame({ onBack }: Props) {
                   {inputFeedback}
                 </span>
               ) : (
-                <span className="text-[9px] font-bold text-[#7a5732] drop-shadow-[0_1px_0_rgba(255,255,255,0.5)] uppercase tracking-wider">
-                  {currentItem.category} • {targetWord.length} LETTERS{' '}
-                  {role === 'guesser' && roundStatus === 'playing' ? '• TAP TO TYPE' : ''}
-                </span>
+                <div className="flex items-center gap-1.5 justify-center flex-wrap">
+                  <span className="text-[9px] font-bold text-[#7a5732] drop-shadow-[0_1px_0_rgba(255,255,255,0.5)] uppercase tracking-wider">
+                    {currentItem.category} • {targetWord.length} LETTERS
+                  </span>
+                  {role === 'guesser' && roundStatus === 'playing' && (
+                    <span className="text-[8.5px] font-black text-[#1b432a] bg-[#38C185]/30 border border-[#38C185]/60 px-1.5 py-0.2 rounded-full">
+                      Bonus: +{revealedClueIndices.length <= 1 ? 60 : revealedClueIndices.length === 2 ? 40 : revealedClueIndices.length === 3 ? 20 : 0} pts
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1206,8 +1214,12 @@ export function SecretClueGame({ onBack }: Props) {
                     className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
                     draggable={false}
                   />
-                  <span className="relative z-10 pt-0.5 font-display font-black text-[10px] sm:text-[11px] text-white tracking-wide">
-                    {isWaitingForClue ? 'WAITING...' : `REQUEST CLUE (${4 - revealedClueIndices.length})`}
+                  <span className="relative z-10 pt-0.5 font-display font-black text-[9px] sm:text-[10px] text-white tracking-wide">
+                    {isWaitingForClue
+                      ? 'WAITING...'
+                      : revealedClueIndices.length >= 4
+                      ? 'ALL CLUES REVEALED'
+                      : `REQUEST CLUE (-20 PTS) • ${4 - revealedClueIndices.length} LEFT`}
                   </span>
                 </button>
 
@@ -1310,27 +1322,44 @@ export function SecretClueGame({ onBack }: Props) {
 
             {/* Content inside dialog texture */}
             <div className="relative z-10 w-[84%] flex flex-col items-center justify-center text-center">
-              {/* Label on top: SECRET WORD */}
+              {/* Label on top: SECRET WORD (giver) or YOUR TURN TO GUESS (guesser) */}
               <span className="font-display font-black text-xs sm:text-sm uppercase tracking-widest text-[#5a3e20] drop-shadow-[0_1px_0_rgba(255,255,255,0.7)] mb-1 sm:mb-2">
-                SECRET WORD
+                {role === 'giver' ? 'SECRET WORD' : 'YOUR TURN TO GUESS'}
               </span>
 
-              {/* The Word for that round */}
+              {/* The Word for that round (revealed ONLY to clue giver, masked for guesser) */}
               <div className="flex items-center justify-center gap-1 sm:gap-1.5 flex-wrap my-1 sm:my-2">
-                {targetWord.split('').map((char, idx) => (
-                  <div
-                    key={idx}
-                    className="w-6 h-7 sm:w-7 sm:h-8 rounded-md bg-[#382613] text-[#38C185] flex items-center justify-center font-display font-black text-xs sm:text-sm shadow-md select-none border-t border-white/20"
-                  >
-                    {char}
-                  </div>
-                ))}
+                {role === 'giver' ? (
+                  targetWord.split('').map((char, idx) => (
+                    <div
+                      key={idx}
+                      className="w-6 h-7 sm:w-7 sm:h-8 rounded-md bg-[#382613] text-[#38C185] flex items-center justify-center font-display font-black text-xs sm:text-sm shadow-md select-none border-t border-white/20"
+                    >
+                      {char}
+                    </div>
+                  ))
+                ) : (
+                  Array.from({ length: targetWord.length }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="w-6 h-7 sm:w-7 sm:h-8 rounded-md bg-[#382613]/90 text-[#F0B247] flex items-center justify-center font-display font-black text-xs sm:text-sm shadow-md select-none border-t border-white/20"
+                    >
+                      ?
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Category & Length */}
               <span className="text-[10px] sm:text-xs font-bold text-[#7a5732] drop-shadow-[0_1px_0_rgba(255,255,255,0.5)] uppercase tracking-wider">
                 {currentItem.category} • {targetWord.length} LETTERS
               </span>
+
+              {role === 'guesser' && (
+                <span className="text-[9px] font-semibold text-[#8b653c] mt-1">
+                  Read the clues and deduce the secret word!
+                </span>
+              )}
             </div>
           </div>
         </div>

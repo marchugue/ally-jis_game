@@ -178,6 +178,7 @@ export function SecretClueDuel({ onBack, duel }: Props) {
     nextRoundAt?: number | null;
     category?: string;
     word?: string;
+    wordLength?: number;
     revealedClues?: Array<{ index: number; text: string }>;
     allClues?: Array<{ index: number; text: string; revealed: boolean }>;
     clueRequested?: boolean;
@@ -189,6 +190,11 @@ export function SecretClueDuel({ onBack, duel }: Props) {
       funFact?: string | null;
       guesserPoints: number;
       giverPoints: number;
+      breakdown?: {
+        base: number;
+        time: number;
+        clueBonus: number;
+      };
     } | null;
   };
 
@@ -207,8 +213,19 @@ export function SecretClueDuel({ onBack, duel }: Props) {
   const endsAt = state.roundEndsAt ?? now;
   const timeLeft = Math.max(0, Math.ceil((endsAt - now) / 1000));
 
-  const targetWord = state.word ? state.word.toUpperCase() : '';
-  const wordLength = targetWord.length || 5;
+  // Only the giver or anyone when the round is resolved gets the target word
+  const targetWord = (isGiver || isResolved) && state.word ? state.word.toUpperCase() : '';
+  const wordLength = state.wordLength || (targetWord ? targetWord.length : 5);
+
+  // Clue bonus: 60 with 1 clue, drops by 20 for each additional clue asked (60 -> 40 -> 20 -> 0)
+  const revealedCount = state.revealedClues?.length || 1;
+  const currentClueBonus = revealedCount <= 1 ? 60 : revealedCount === 2 ? 40 : revealedCount === 3 ? 20 : 0;
+
+  // Clear guess input whenever the round, phase, or role transitions
+  useEffect(() => {
+    setGuessInput('');
+    setInputFeedback(null);
+  }, [state.round, phase, role]);
 
   const toggleSound = () => {
     const next = !soundOn;
@@ -456,13 +473,28 @@ export function SecretClueDuel({ onBack, duel }: Props) {
             {/* Sub-label */}
             <div className="mt-1 text-[10px] font-bold text-[#5c4024]">
               {isResolved ? (
-                <span className="text-[#38C185] font-black">
-                  {state.result?.type === 'solved' ? '🎉 Word Cracked!' : '⏰ Time Expired!'} Next round soon...
-                </span>
+                <div className="flex flex-col items-center">
+                  <span className="text-[#38C185] font-black text-xs">
+                    {state.result?.type === 'solved'
+                      ? `🎉 Word Cracked! +${state.result.guesserPoints} PTS`
+                      : '⏰ Time Expired! Giver earned stump bonus'}
+                  </span>
+                  {state.result?.type === 'solved' && state.result.breakdown && (
+                    <span className="text-[9px] text-[#7a5732] font-semibold mt-0.5">
+                      Base: {state.result.breakdown.base} • Time: +{state.result.breakdown.time} • Clue Bonus: +{state.result.breakdown.clueBonus} pts
+                    </span>
+                  )}
+                  <span className="text-[9px] text-[#5c4024]/80 mt-0.5">Next round soon...</span>
+                </div>
               ) : isGiver ? (
-                <span>Category: {state.category || 'Clue'} • {targetWord.length} letters</span>
+                <span>Category: {state.category || 'Clue'} • {wordLength} letters</span>
               ) : (
-                <span>{wordLength} Letters • Type your guess below</span>
+                <div className="flex items-center gap-1.5 justify-center flex-wrap">
+                  <span>{wordLength} Letters • Type your guess</span>
+                  <span className="text-[9px] font-black text-[#1b432a] bg-[#38C185]/30 border border-[#38C185]/60 px-1.5 py-0.5 rounded-full" title="Asking for another clue reduces this bonus by 20 pts">
+                    Clue Bonus: +{currentClueBonus} pts
+                  </span>
+                </div>
               )}
             </div>
           </div>
@@ -543,6 +575,7 @@ export function SecretClueDuel({ onBack, duel }: Props) {
                   onChange={(e) => setGuessInput(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, wordLength))}
                   placeholder={`GUESS (${wordLength} LETTERS)`}
                   disabled={isIntro}
+                  maxLength={wordLength}
                   className="flex-1 h-11 px-3.5 rounded-full bg-[#0c1622]/90 border border-white/20 text-white font-display font-black text-sm tracking-wider uppercase focus:outline-none focus:border-[#38C185] placeholder:text-[#64748B]"
                 />
                 <button
@@ -565,7 +598,9 @@ export function SecretClueDuel({ onBack, duel }: Props) {
               >
                 {state.clueRequested
                   ? `Waiting for ${duel.opponentName} to reveal a clue...`
-                  : '💡 Ask Opponent for Another Clue'}
+                  : (state.revealedClues?.length || 0) >= 4
+                  ? 'All 4 clues revealed (0 clue bonus)'
+                  : `💡 Ask for Extra Clue (-20 pts bonus) • ${4 - (state.revealedClues?.length || 1)} left`}
               </button>
             </div>
           ) : isGiver && phase === 'playing' ? (

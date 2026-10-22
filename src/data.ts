@@ -10,7 +10,29 @@ export const FRIENDS: Friend[] = [
 ];
 
 export const GAMES: Game[] = [
-  { id: 'merge', name: '2048 Merge', description: 'Slide, merge, and reach the 2048 tile.', tint: '#1b436b', artWidth: '320px', featured: true },
-  { id: 'ttt', name: 'Tic-Tac-Toe', description: 'Three in a row wins.', tint: '#141d2b', artWidth: '190px' },
-  { id: 'clue', name: 'Secret Clue', description: 'Deduce the secret word with 4 clever clues.', tint: '#1f1a29', artWidth: '230px' },
+  {
+    id: 'merge',
+    name: '2048 Merge',
+    description: 'Slide, merge, and reach the 2048 tile.',
+    tint: '#1b436b',
+    artWidth: '320px',
+    featured: true,
+    coverImage: '/game-merge-cover.jpg',
+  },
+  {
+    id: 'ttt',
+    name: 'Tic-Tac-Toe',
+    description: 'Three in a row wins.',
+    tint: '#141d2b',
+    artWidth: '190px',
+    coverImage: '/game-ttt-cover.jpg',
+  },
+  {
+    id: 'clue',
+    name: 'Secret Clue',
+    description: 'Deduce the secret word with 4 clever clues.',
+    tint: '#1f1a29',
+    artWidth: '230px',
+    coverImage: '/game-clue-cover.jpg',
+  },
 ];

@@ -7,6 +7,7 @@ import { AuthGuard } from './components/AuthGuard';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameCard } from './components/GameCard';
 import { InviteDialog } from './components/InviteDialog';
+import { GameModeDialog } from './components/GameModeDialog';
 import { LeaderboardPanel } from './components/LeaderboardPanel';
 import { DuelHost } from './components/DuelHost';
 import { TicTacToeGame } from './components/TicTacToeGame';
@@ -24,7 +25,7 @@ import {
   fetchGameSession,
   type GameSessionDto,
 } from './lib/gameApi';
-import type { Friend, GameId, Pending, Person, View } from './types';
+import type { Friend, Game, GameId, Pending, Person, View } from './types';
 
 function GamePortal() {
   const { user, token } = useGameAuth();
@@ -36,6 +37,7 @@ function GamePortal() {
   const [demoGameId, setDemoGameId] = useState<GameId | null>(null);
   const [duelSession, setDuelSession] = useState<GameSessionDto | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [modeSelectionGame, setModeSelectionGame] = useState<Game | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [activeInviteSessionId, setActiveInviteSessionId] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -131,10 +133,17 @@ function GamePortal() {
 
   const game = GAMES.find((g) => g.id === gameId) ?? null;
 
-  const openDialog = (id: GameId) => {
+  const openInviteDialog = (id: GameId) => {
     setGameId(id);
     setInviteError(null);
     setDialogOpen(true);
+  };
+
+  const handlePlayClicked = (id: GameId) => {
+    const selected = GAMES.find((g) => g.id === id);
+    if (selected) {
+      setModeSelectionGame(selected);
+    }
   };
 
   const handleSendInvite = async (id: GameId | null = gameId) => {
@@ -224,7 +233,7 @@ function GamePortal() {
 
         <main className="main-content p-[36px_40px_48px] max-[1180px]:p-[32px_28px_40px] max-[959px]:p-[max(18px,env(safe-area-inset-top,0px))_18px_calc(96px+env(safe-area-inset-bottom,0px))] max-[959px]:static max-[959px]:h-auto max-[959px]:border-0">
           {view === 'leaderboard' ? (
-            <LeaderboardPanel onPlayGame={(gId) => openDialog(gId)} />
+            <LeaderboardPanel onPlayGame={(gId) => handlePlayClicked(gId)} />
           ) : (
             <div className="max-w-[1100px] mx-auto animate-pop">
               {/* Active Resumable Duel Callout */}
@@ -263,8 +272,7 @@ function GamePortal() {
                   <GameCard
                     key={g.id}
                     game={g}
-                    onPlay={openDialog}
-                    onDemo={(id) => setDemoGameId(id)}
+                    onPlay={handlePlayClicked}
                   />
                 ))}
               </div>
@@ -365,6 +373,22 @@ function GamePortal() {
           setDialogOpen(false);
           setInviteError(null);
         }}
+        onPlaySolo={(id) => setDemoGameId(id)}
+      />
+
+      {/* ═══ GAMEMODE SELECTION DIALOG: SOLO OR PLAY WITH FRIENDS ═══ */}
+      <GameModeDialog
+        open={Boolean(modeSelectionGame)}
+        game={modeSelectionGame}
+        onSolo={() => {
+          if (modeSelectionGame) setDemoGameId(modeSelectionGame.id);
+          setModeSelectionGame(null);
+        }}
+        onFriends={() => {
+          if (modeSelectionGame) openInviteDialog(modeSelectionGame.id);
+          setModeSelectionGame(null);
+        }}
+        onClose={() => setModeSelectionGame(null)}
       />
 
       {/* Error alert toast if invite fails */}

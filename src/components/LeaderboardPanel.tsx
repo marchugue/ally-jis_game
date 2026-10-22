@@ -12,20 +12,21 @@ interface Props {
 
 export function LeaderboardPanel({ onPlayGame }: Props) {
   const { token, user } = useGameAuth();
-  const [selectedGame, setSelectedGame] = useState<GameId>('merge');
+  const [selectedGame, setSelectedGame] = useState<GameId>('clue');
   const [scope, setScope] = useState<'global' | 'friends'>('global');
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadLeaderboard = useCallback(async () => {
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchLeaderboard(token, selectedGame, scope);
+      const activeScope = (!token && scope === 'friends') ? 'global' : scope;
+      const res = await fetchLeaderboard(token, selectedGame, activeScope);
       setData(res);
     } catch (err: any) {
+      console.warn('[Leaderboard] Load error:', err);
       setError(err?.message || 'Failed to load leaderboard');
     } finally {
       setLoading(false);
@@ -52,29 +53,49 @@ export function LeaderboardPanel({ onPlayGame }: Props) {
           </p>
         </div>
 
-        {/* Scope Toggle: Global vs Friends/Allies */}
-        <div className="flex items-center p-1 rounded-full bg-[#0c1622]/90 border border-white/10 backdrop-blur-md self-start sm:self-auto shadow-inner">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {/* Scope Toggle: Global vs Friends/Allies */}
+          <div className="flex items-center p-1 rounded-full bg-[#0c1622]/90 border border-white/10 backdrop-blur-md shadow-inner">
+            <button
+              type="button"
+              onClick={() => setScope('global')}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${
+                scope === 'global'
+                  ? 'bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#081B12] shadow-sm'
+                  : 'text-[#94A3B8] hover:text-white'
+              }`}
+            >
+              Global Campus
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!token) return;
+                setScope('friends');
+              }}
+              disabled={!token}
+              title={!token ? 'Sign in to view ally standings' : undefined}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 ${
+                !token ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+              } ${
+                scope === 'friends'
+                  ? 'bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#081B12] shadow-sm'
+                  : 'text-[#94A3B8] hover:text-white'
+              }`}
+            >
+              Allies & Friends
+            </button>
+          </div>
+
+          {/* Refresh Button */}
           <button
             type="button"
-            onClick={() => setScope('global')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${
-              scope === 'global'
-                ? 'bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#081B12] shadow-sm'
-                : 'text-[#94A3B8] hover:text-white'
-            }`}
+            onClick={() => loadLeaderboard()}
+            disabled={loading}
+            className="p-2 rounded-full bg-[#0c1622]/90 hover:bg-[#152638] border border-white/10 text-[#94A3B8] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh Rankings"
           >
-            Global Campus
-          </button>
-          <button
-            type="button"
-            onClick={() => setScope('friends')}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${
-              scope === 'friends'
-                ? 'bg-gradient-to-r from-[#38C185] to-[#42d494] text-[#081B12] shadow-sm'
-                : 'text-[#94A3B8] hover:text-white'
-            }`}
-          >
-            Allies & Friends
+            <span className={`inline-block ${loading ? 'animate-spin' : ''}`}>🔄</span>
           </button>
         </div>
       </div>

@@ -26,9 +26,9 @@ export interface AuthSession {
   expiresAt?: number;
 }
 
-export const DEFAULT_PRODUCTION_API_URL = 'https://ally-jisbackend-production.up.railway.app/api';
+export const DEFAULT_PRODUCTION_API_URL = 'https://api.ally-jis.com/api';
 export const DEFAULT_PRODUCTION_WEB_URL = 'https://ally-jis.com';
-export const DEFAULT_PRODUCTION_SOCKET_URL = 'https://ally-jisbackend-production.up.railway.app';
+export const DEFAULT_PRODUCTION_SOCKET_URL = 'https://api.ally-jis.com';
 
 /**
  * Resolves the Backend API base URL from .env (VITE_API_BASE_URL).

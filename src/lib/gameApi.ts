@@ -74,14 +74,18 @@ export interface LeaderboardResponse {
 
 // ── REST ─────────────────────────────────────────────────────────────────────
 
-async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, token?: string | null, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init.headers as Record<string, string>) ?? {}),
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
 
   let body: any = null;
@@ -129,7 +133,7 @@ export async function fetchOpenGames(
 }
 
 export async function fetchLeaderboard(
-  token: string,
+  token: string | null | undefined,
   gameId: GameId,
   scope: 'global' | 'friends',
 ): Promise<LeaderboardResponse> {
